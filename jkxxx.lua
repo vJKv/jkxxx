@@ -1,0 +1,1094 @@
+-- [[ JKxxx ELITE - V7.0 ]] --
+-- FOV follows cursor, SA cursor-based, Aimlock Method dropdown,
+-- Arrow on far-right, Head circles, Menu/Color/Other settings, Accent in Color
+
+local Players          = game:GetService("Players")
+local RunService       = game:GetService("RunService")
+local TweenService     = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local player           = Players.LocalPlayer
+
+-- ══════════════════════════════════════════
+--  STATE
+-- ══════════════════════════════════════════
+local flying, noclip, walkSpeedEnabled = false, false, false
+local clickTpEnabled                   = false
+local highlightEnabled, boxesEnabled   = false, false
+local headEnabled                      = false
+local tracersEnabled                   = false
+local aimbotEnabled, silentAimEnabled  = false, false
+local aimFovEnabled,  saFovEnabled     = false, false
+local dexterState                      = false
+local aimlockMethod                    = "camera" -- "camera" | "cursor"
+
+local flySpeed       = 50
+local walkSpeedValue = 16
+local aimFovRadius   = 120
+local saFovRadius    = 120
+local glassMode, outlineEnabled = false, true
+
+local strokeColorMode  = "rgb";  local fixedStrokeColor = Color3.new(1, 1, 1)
+local visualColorMode  = "rgb";  local fixedVisualColor  = Color3.new(1, 0, 0)
+local fovColorMode     = "rgb";  local fixedFovColor     = Color3.new(1, 1, 1)
+local accentColor      = nil  -- nil = per-toggle default
+
+-- Per-player tables
+local espHighlights = {}
+local boxFrames     = {}
+local headCircles   = {}
+local tracerFrames  = {}
+
+local FOV_MIN, FOV_MAX     = 30, 500
+local tracerOriginBottom   = false  -- false = top, true = bottom
+
+-- Style tracking tables
+local allToggles      = {}
+local toggleRegistry  = {}
+local sliderElements  = {}
+local allSubUnderlines = {}
+
+-- ══════════════════════════════════════════
+--  COLOR / THEME PRESETS
+-- ══════════════════════════════════════════
+local COLOR_PRESETS = {
+    {label="RGB (animated)", mode="rgb",   color=nil},
+    {label="Blue",           mode="fixed", color=Color3.fromRGB(30,  120, 255)},
+    {label="Red",            mode="fixed", color=Color3.fromRGB(255,  50,  50)},
+    {label="Green",          mode="fixed", color=Color3.fromRGB(0,   210,  80)},
+    {label="Yellow",         mode="fixed", color=Color3.fromRGB(255, 215,   0)},
+    {label="Pink",           mode="fixed", color=Color3.fromRGB(255,  80, 180)},
+    {label="Purple",         mode="fixed", color=Color3.fromRGB(160,  55, 255)},
+    {label="White",          mode="fixed", color=Color3.fromRGB(240, 240, 240)},
+}
+local ACCENT_PRESETS = {
+    {label="Default", mode="default", color=nil},
+    {label="Blue",    mode="fixed",   color=Color3.fromRGB(30,  120, 255)},
+    {label="Red",     mode="fixed",   color=Color3.fromRGB(255,  50,  50)},
+    {label="Green",   mode="fixed",   color=Color3.fromRGB(0,   210,  80)},
+    {label="Yellow",  mode="fixed",   color=Color3.fromRGB(255, 215,   0)},
+    {label="Pink",    mode="fixed",   color=Color3.fromRGB(255,  80, 180)},
+    {label="Purple",  mode="fixed",   color=Color3.fromRGB(160,  55, 255)},
+    {label="White",   mode="fixed",   color=Color3.fromRGB(240, 240, 240)},
+}
+local AIMLOCK_METHODS = {
+    {label="Camera", mode="camera"},
+    {label="Cursor", mode="cursor"},
+}
+local TRACER_POSITIONS = {
+    {label="Top",    mode="top"},
+    {label="Bottom", mode="bottom"},
+}
+local THEMES_PRESETS = {
+    {label="Default"},
+    {label="Dark"},
+    {label="Light"},
+}
+
+-- ══════════════════════════════════════════
+--  GUI ROOT
+-- ══════════════════════════════════════════
+local sg = Instance.new("ScreenGui")
+sg.Name           = "JKxxx_V7"
+sg.ResetOnSpawn   = false
+sg.IgnoreGuiInset = true
+sg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+sg.Parent         = player:WaitForChild("PlayerGui")
+
+-- Canvas (non-interactive, behind menu)
+local canvas = Instance.new("Frame", sg)
+canvas.Size                   = UDim2.new(1, 0, 1, 0)
+canvas.BackgroundTransparency = 1
+canvas.BorderSizePixel        = 0
+canvas.ZIndex                 = 1
+canvas.Active                 = false
+
+-- Aimlock FOV circle (follows cursor)
+local aimFovCircle = Instance.new("Frame", sg)
+aimFovCircle.AnchorPoint            = Vector2.new(0.5, 0.5)
+aimFovCircle.Size                   = UDim2.new(0, aimFovRadius*2, 0, aimFovRadius*2)
+aimFovCircle.Position               = UDim2.new(0.5, 0, 0.5, 0)
+aimFovCircle.BackgroundTransparency = 1
+aimFovCircle.ZIndex                 = 2
+aimFovCircle.Visible                = false
+aimFovCircle.Active                 = false
+Instance.new("UICorner", aimFovCircle).CornerRadius = UDim.new(1, 0)
+local aimFovStroke = Instance.new("UIStroke", aimFovCircle)
+aimFovStroke.Thickness = 1.4
+
+-- Silent Aim FOV circle (follows cursor)
+local saFovCircle = Instance.new("Frame", sg)
+saFovCircle.AnchorPoint            = Vector2.new(0.5, 0.5)
+saFovCircle.Size                   = UDim2.new(0, saFovRadius*2, 0, saFovRadius*2)
+saFovCircle.Position               = UDim2.new(0.5, 0, 0.5, 0)
+saFovCircle.BackgroundTransparency = 1
+saFovCircle.ZIndex                 = 2
+saFovCircle.Visible                = false
+saFovCircle.Active                 = false
+Instance.new("UICorner", saFovCircle).CornerRadius = UDim.new(1, 0)
+local saFovStroke = Instance.new("UIStroke", saFovCircle)
+saFovStroke.Thickness = 1.4
+
+-- Main window
+local main = Instance.new("Frame", sg)
+main.Size             = UDim2.new(0, 320, 0, 260)
+main.Position         = UDim2.new(0.5, -160, 0.4, 0)
+main.BackgroundColor3 = Color3.fromRGB(12, 12, 14)
+main.BorderSizePixel  = 0
+main.Active           = true
+main.Draggable        = true
+main.ZIndex           = 5
+Instance.new("UICorner", main).CornerRadius = UDim.new(0, 8)
+
+local stroke = Instance.new("UIStroke", main)
+stroke.Thickness = 1.5
+
+local minBtn = Instance.new("TextButton", main)
+minBtn.Size               = UDim2.new(0, 30, 0, 30)
+minBtn.Position           = UDim2.new(1, -35, 0, 0)
+minBtn.BackgroundTransparency = 1
+minBtn.Text               = "—"
+minBtn.TextColor3         = Color3.new(1,1,1)
+minBtn.Font               = Enum.Font.GothamBold
+minBtn.TextSize           = 14
+
+local openBtn = Instance.new("TextButton", sg)
+openBtn.Size             = UDim2.new(0, 40, 0, 40)
+openBtn.Position         = UDim2.new(0, 15, 0.5, -20)
+openBtn.BackgroundColor3 = Color3.fromRGB(12, 12, 14)
+openBtn.Text             = "JK"
+openBtn.Font             = Enum.Font.GothamBold
+openBtn.TextColor3       = Color3.new(1,1,1)
+openBtn.TextSize         = 14
+openBtn.Visible          = false
+openBtn.ZIndex           = 5
+Instance.new("UICorner", openBtn).CornerRadius = UDim.new(0, 8)
+local openStroke = Instance.new("UIStroke", openBtn)
+openStroke.Thickness = 1.2
+
+minBtn.MouseButton1Click:Connect(function()  main.Visible=false; openBtn.Visible=true  end)
+openBtn.MouseButton1Click:Connect(function() main.Visible=true;  openBtn.Visible=false end)
+
+-- ══════════════════════════════════════════
+--  SIDEBAR
+-- ══════════════════════════════════════════
+local sideBar = Instance.new("Frame", main)
+sideBar.Size             = UDim2.new(0, 45, 1, 0)
+sideBar.BackgroundColor3 = Color3.fromRGB(18, 18, 22)
+Instance.new("UICorner", sideBar).CornerRadius = UDim.new(0, 8)
+
+local logo = Instance.new("TextLabel", sideBar)
+logo.Size = UDim2.new(1,0,0,35); logo.Text = "JK"
+logo.Font = Enum.Font.GothamBold; logo.TextColor3 = Color3.new(1,1,1)
+logo.TextSize = 16; logo.BackgroundTransparency = 1
+
+local rgbLine = Instance.new("Frame", sideBar)
+rgbLine.Size = UDim2.new(0,25,0,2); rgbLine.Position = UDim2.new(0.5,-12,0,32)
+rgbLine.BorderSizePixel = 0
+
+local function mkIconBtn(icon, posY)
+    local b = Instance.new("TextButton", sideBar)
+    b.Size = UDim2.new(0,30,0,30); b.Position = UDim2.new(0.5,-15,0,posY)
+    b.Text = icon; b.Font = Enum.Font.GothamBold; b.TextSize = 14
+    b.BackgroundColor3 = Color3.fromRGB(30,30,35)
+    b.TextColor3 = Color3.fromRGB(180,180,180)
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0,6)
+    return b
+end
+
+local btnMisc   = mkIconBtn("🛠",  55)
+local btnVis    = mkIconBtn("👁",  95)
+local btnCombat = mkIconBtn("⚔️", 135)
+local btnSett   = mkIconBtn("⚙️", 175)
+
+-- ══════════════════════════════════════════
+--  CONTENT AREA + PAGES
+-- ══════════════════════════════════════════
+local cArea = Instance.new("Frame", main)
+cArea.Size = UDim2.new(1,-55,1,-10); cArea.Position = UDim2.new(0,50,0,5)
+cArea.BackgroundTransparency = 1
+
+local titleLbl = Instance.new("TextLabel", cArea)
+titleLbl.Size = UDim2.new(1,0,0,30); titleLbl.Text = "MISC"
+titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextColor3 = Color3.new(1,1,1)
+titleLbl.TextSize = 13; titleLbl.BackgroundTransparency = 1
+titleLbl.TextXAlignment = Enum.TextXAlignment.Left
+
+local function mkPage()
+    local p = Instance.new("ScrollingFrame", cArea)
+    p.Size = UDim2.new(1,0,1,-35); p.Position = UDim2.new(0,0,0,35)
+    p.BackgroundTransparency = 1; p.Visible = false; p.ScrollBarThickness = 0
+    local l = Instance.new("UIListLayout", p)
+    l.Padding = UDim.new(0,6); l.SortOrder = Enum.SortOrder.LayoutOrder
+    return p
+end
+
+local function mkSubPage()
+    local f = Instance.new("Frame", cArea)
+    f.Size = UDim2.new(1,0,1,-35); f.Position = UDim2.new(0,0,0,35)
+    f.BackgroundTransparency = 1; f.Visible = false
+    return f
+end
+
+local pgMisc    = mkPage(); pgMisc.Visible = true
+local pgVisuals = mkSubPage()
+local pgCombat  = mkSubPage()
+local pgSett    = mkSubPage()
+
+-- ══════════════════════════════════════════
+--  ACCENT + TOGGLE HELPERS
+-- ══════════════════════════════════════════
+local OFF_IND = Color3.fromRGB(40,40,45)
+local OFF_TXT = Color3.fromRGB(180,180,180)
+
+local function setT(btn, ind, on, col)
+    local c = on and (accentColor or col) or OFF_IND
+    ind.BackgroundColor3 = c
+    btn.TextColor3 = on and (accentColor or col) or OFF_TXT
+    for _, r in ipairs(toggleRegistry) do
+        if r.btn == btn then r.isOn=on; r.col=col; break end
+    end
+end
+
+local function applyAccent(newColor)
+    accentColor = newColor
+    for _, r in ipairs(toggleRegistry) do
+        if r.isOn then
+            r.ind.BackgroundColor3 = accentColor or r.col
+            r.btn.TextColor3       = accentColor or r.col
+        end
+    end
+    local sc = accentColor or Color3.new(1,1,1)
+    for _, sl in ipairs(sliderElements) do
+        sl[1].BackgroundColor3 = sc; sl[2].BackgroundColor3 = sc
+    end
+end
+
+-- ══════════════════════════════════════════
+--  COMPONENT FACTORIES
+-- ══════════════════════════════════════════
+local function mkToggle(name, parent, order)
+    local b = Instance.new("TextButton", parent)
+    b.Size = UDim2.new(0.95,0,0,28); b.BackgroundColor3 = Color3.fromRGB(25,25,30)
+    b.Text = "  "..name; b.Font = Enum.Font.GothamSemibold; b.TextSize = 11
+    b.TextColor3 = OFF_TXT; b.TextXAlignment = Enum.TextXAlignment.Left
+    b.LayoutOrder = order
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0,4)
+    local ind = Instance.new("Frame", b)
+    ind.Size = UDim2.new(0,3,0,14); ind.Position = UDim2.new(1,-10,0.5,-7)
+    ind.BackgroundColor3 = OFF_IND
+    Instance.new("UICorner", ind)
+    table.insert(allToggles, b)
+    table.insert(toggleRegistry, {btn=b, ind=ind, isOn=false, col=OFF_IND})
+    return b, ind
+end
+
+local function mkSlider(parent, order, label, minV, maxV, defV, onChange)
+    local wrap = Instance.new("Frame", parent)
+    wrap.Size = UDim2.new(0.95,0,0,38); wrap.BackgroundTransparency = 1
+    wrap.LayoutOrder = order
+
+    local lbl = Instance.new("TextLabel", wrap)
+    lbl.Size = UDim2.new(1,0,0,14); lbl.BackgroundTransparency = 1
+    lbl.Font = Enum.Font.Gotham; lbl.TextSize = 10
+    lbl.TextColor3 = Color3.fromRGB(150,150,160)
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.Text = "  "..label..": "..defV
+
+    local track = Instance.new("Frame", wrap)
+    track.Size = UDim2.new(1,-10,0,5); track.Position = UDim2.new(0,5,0,22)
+    track.BackgroundColor3 = Color3.fromRGB(30,30,42); track.BorderSizePixel = 0
+    Instance.new("UICorner", track).CornerRadius = UDim.new(1,0)
+
+    local initPct = math.clamp((defV-minV)/(maxV-minV), 0, 1)
+    local sc = accentColor or Color3.new(1,1,1)
+
+    local fill = Instance.new("Frame", track)
+    fill.Size = UDim2.new(initPct,0,1,0); fill.BackgroundColor3 = sc
+    fill.BorderSizePixel = 0
+    Instance.new("UICorner", fill).CornerRadius = UDim.new(1,0)
+
+    local knob = Instance.new("Frame", track)
+    knob.Size = UDim2.new(0,11,0,11); knob.AnchorPoint = Vector2.new(0.5,0.5)
+    knob.Position = UDim2.new(initPct,0,0.5,0)
+    knob.BackgroundColor3 = sc; knob.BorderSizePixel = 0
+    Instance.new("UICorner", knob).CornerRadius = UDim.new(1,0)
+
+    table.insert(sliderElements, {fill, knob})
+
+    local dragging = false
+    local function applyX(absX)
+        local ta, ts = track.AbsolutePosition, track.AbsoluteSize
+        local pct = math.clamp((absX - ta.X) / ts.X, 0, 1)
+        local val = math.floor(minV + pct*(maxV-minV))
+        fill.Size = UDim2.new(pct,0,1,0); knob.Position = UDim2.new(pct,0,0.5,0)
+        lbl.Text = "  "..label..": "..val; onChange(val)
+    end
+    knob.InputBegan:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then dragging=true end end)
+    track.InputBegan:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then dragging=true; applyX(i.Position.X) end end)
+    UserInputService.InputChanged:Connect(function(i) if dragging and i.UserInputType==Enum.UserInputType.MouseMovement then applyX(i.Position.X) end end)
+    UserInputService.InputEnded:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then dragging=false end end)
+    return wrap
+end
+
+local function mkLabel(text, parent, order)
+    local l = Instance.new("TextLabel", parent)
+    l.Size = UDim2.new(0.95,0,0,15); l.BackgroundTransparency = 1
+    l.Text = "  "..text; l.Font = Enum.Font.Gotham; l.TextSize = 9
+    l.TextColor3 = Color3.fromRGB(110,110,125)
+    l.TextXAlignment = Enum.TextXAlignment.Left; l.LayoutOrder = order
+    return l
+end
+
+-- ══════════════════════════════════════════
+--  DROPDOWN FACTORY
+--  Arrow label pinned to far right of button
+-- ══════════════════════════════════════════
+local function mkDropdown(parent, order, presets, onSelect)
+    local btn = Instance.new("TextButton", parent)
+    btn.Size = UDim2.new(0.95,0,0,26); btn.BackgroundColor3 = Color3.fromRGB(25,25,32)
+    btn.Text = "  "..presets[1].label   -- no arrow in text
+    btn.Font = Enum.Font.GothamSemibold; btn.TextSize = 10
+    btn.TextColor3 = Color3.new(1,1,1)
+    btn.TextXAlignment = Enum.TextXAlignment.Left
+    btn.LayoutOrder = order; btn.ClipsDescendants = true
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0,4)
+
+    -- Arrow label — far right, always same position regardless of text
+    local arrow = Instance.new("TextLabel", btn)
+    arrow.Size = UDim2.new(0,20,1,0); arrow.Position = UDim2.new(1,-22,0,0)
+    arrow.BackgroundTransparency = 1; arrow.Text = "v"
+    arrow.Font = Enum.Font.GothamBold; arrow.TextSize = 10
+    arrow.TextColor3 = Color3.fromRGB(130,130,145)
+    arrow.TextXAlignment = Enum.TextXAlignment.Center
+
+    -- Floating list parented to sg
+    local list = Instance.new("Frame", sg)
+    list.Size = UDim2.new(0,185,0,#presets*25+6)
+    list.BackgroundColor3 = Color3.fromRGB(20,20,26)
+    list.BorderSizePixel = 0; list.Visible = false; list.ZIndex = 20
+    Instance.new("UICorner", list).CornerRadius = UDim.new(0,6)
+    local listStroke = Instance.new("UIStroke", list)
+    listStroke.Thickness = 0.8; listStroke.Color = Color3.fromRGB(50,50,65)
+    local ll = Instance.new("UIListLayout", list)
+    ll.Padding = UDim.new(0,1); ll.SortOrder = Enum.SortOrder.LayoutOrder
+    local lp = Instance.new("UIPadding", list)
+    lp.PaddingTop=UDim.new(0,3); lp.PaddingBottom=UDim.new(0,3)
+    lp.PaddingLeft=UDim.new(0,3); lp.PaddingRight=UDim.new(0,3)
+
+    local open = false
+
+    for i, preset in ipairs(presets) do
+        local opt = Instance.new("TextButton", list)
+        opt.Size = UDim2.new(1,0,0,23); opt.BackgroundColor3 = Color3.fromRGB(38,38,50)
+        opt.BackgroundTransparency = 1; opt.Text = "  "..preset.label
+        opt.Font = Enum.Font.GothamSemibold; opt.TextSize = 10
+        opt.TextColor3 = Color3.fromRGB(200,200,215)
+        opt.TextXAlignment = Enum.TextXAlignment.Left; opt.LayoutOrder = i
+        Instance.new("UICorner", opt).CornerRadius = UDim.new(0,4)
+        opt.MouseEnter:Connect(function() opt.BackgroundTransparency=0 end)
+        opt.MouseLeave:Connect(function() opt.BackgroundTransparency=1 end)
+        opt.MouseButton1Click:Connect(function()
+            btn.Text = "  "..preset.label
+            list.Visible=false; open=false; onSelect(preset)
+        end)
+    end
+
+    btn.MouseButton1Click:Connect(function()
+        open = not open
+        if open then
+            local bp = btn.AbsolutePosition
+            list.Position = UDim2.new(0, bp.X, 0, bp.Y + btn.AbsoluteSize.Y + 2)
+        end
+        list.Visible = open
+    end)
+
+    UserInputService.InputBegan:Connect(function(inp)
+        if not open or inp.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+        local gp = inp.Position; local dp, ds = list.AbsolutePosition, list.AbsoluteSize
+        if not (gp.X>=dp.X and gp.X<=dp.X+ds.X and gp.Y>=dp.Y and gp.Y<=dp.Y+ds.Y) then
+            list.Visible=false; open=false
+        end
+    end)
+
+    return btn, listStroke
+end
+
+-- ══════════════════════════════════════════
+--  SUB-TAB SYSTEM
+-- ══════════════════════════════════════════
+local SUB_ON  = Color3.new(1,1,1)
+local SUB_OFF = Color3.fromRGB(85,85,95)
+local TW_IN   = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+local TW_OUT  = TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+
+local function mkSubBtn(label, parent, posX, width)
+    local btn = Instance.new("TextButton", parent)
+    btn.Size = UDim2.new(0,width,1,0); btn.Position = UDim2.new(0,posX,0,0)
+    btn.BackgroundTransparency = 1; btn.Text = label
+    btn.Font = Enum.Font.GothamBold; btn.TextSize = 10; btn.TextColor3 = SUB_OFF
+    local ul = Instance.new("Frame", btn)
+    ul.Size = UDim2.new(0,0,0,2); ul.Position = UDim2.new(0.5,0,1,-2)
+    ul.AnchorPoint = Vector2.new(0.5,0); ul.BorderSizePixel = 0
+    ul.BackgroundColor3 = Color3.new(1,1,1)
+    Instance.new("UICorner", ul).CornerRadius = UDim.new(1,0)
+    table.insert(allSubUnderlines, ul)
+    return btn, ul
+end
+
+local function subOn(btn, ul)
+    TweenService:Create(btn, TW_IN, {TextColor3=SUB_ON}):Play()
+    TweenService:Create(ul,  TW_IN, {Size=UDim2.new(0, btn.AbsoluteSize.X*0.78, 0, 2)}):Play()
+end
+local function subOff(btn, ul)
+    TweenService:Create(btn, TW_OUT, {TextColor3=SUB_OFF}):Play()
+    TweenService:Create(ul,  TW_OUT, {Size=UDim2.new(0,0,0,2)}):Play()
+end
+
+local function mkSubNav(page)
+    local nav = Instance.new("Frame", page)
+    nav.Size = UDim2.new(1,0,0,26); nav.BackgroundTransparency = 1
+    local div = Instance.new("Frame", page)
+    div.Size = UDim2.new(1,0,0,1); div.Position = UDim2.new(0,0,0,26)
+    div.BackgroundColor3 = Color3.fromRGB(35,35,42); div.BorderSizePixel = 0
+    return nav
+end
+
+local function mkSubCont(page)
+    local c = Instance.new("ScrollingFrame", page)
+    c.Size = UDim2.new(1,0,1,-32); c.Position = UDim2.new(0,0,0,32)
+    c.BackgroundTransparency = 1; c.ScrollBarThickness = 0; c.Visible = false
+    local l = Instance.new("UIListLayout", c)
+    l.Padding = UDim.new(0,6); l.SortOrder = Enum.SortOrder.LayoutOrder
+    return c
+end
+
+-- ══════════════════════════════════════════
+--  MISC PAGE
+-- ══════════════════════════════════════════
+local tSpeed,   iSpeed   = mkToggle("WalkSpeed",  pgMisc, 1)
+mkSlider(pgMisc, 2, "Speed",     16, 1000, 16, function(v) walkSpeedValue=v end)
+local tFly,     iFly     = mkToggle("Fly Mode",   pgMisc, 3)
+mkSlider(pgMisc, 4, "Fly Speed", 10, 1000, 50, function(v) flySpeed=v end)
+local tNoclip,  iNoclip  = mkToggle("Noclip",     pgMisc, 5)
+local tClickTp, iClickTp = mkToggle("Click TP",   pgMisc, 6)
+
+-- ══════════════════════════════════════════
+--  VISUALS PAGE  (ESP | Tracers | Color)
+-- ══════════════════════════════════════════
+local visNav              = mkSubNav(pgVisuals)
+local btnVsE, ulVsE      = mkSubBtn("ESP",     visNav,   0, 42)
+local btnVsT, ulVsT      = mkSubBtn("Tracers", visNav,  46, 58)
+local btnVsC, ulVsC      = mkSubBtn("Color",   visNav, 108, 46)
+
+local cEsp  = mkSubCont(pgVisuals); cEsp.Visible = true
+local cTrc  = mkSubCont(pgVisuals)
+local cVCol = mkSubCont(pgVisuals)
+
+local tHighlight, iHighlight = mkToggle("Highlight",      cEsp, 1)
+local tBoxes,     iBoxes     = mkToggle("Boxes",          cEsp, 2)
+local tHead,      iHead      = mkToggle("Head",           cEsp, 3)
+local tTracers,   iTracers   = mkToggle("Player Tracers", cTrc, 1)
+
+mkLabel("Tracer origin", cTrc, 2)
+mkDropdown(cTrc, 3, TRACER_POSITIONS, function(p)
+    tracerOriginBottom = (p.mode == "bottom")
+end)
+
+mkLabel("Visual color (ESP / Boxes / Head / Tracers)", cVCol, 1)
+local _, dropVisStroke = mkDropdown(cVCol, 2, COLOR_PRESETS, function(p)
+    visualColorMode = p.mode
+    if p.mode == "fixed" then
+        fixedVisualColor = p.color
+        for _, h in pairs(espHighlights) do h.OutlineColor = p.color end
+        for _, bd in pairs(boxFrames) do bd[2].Color = p.color end
+        for _, hc in pairs(headCircles) do hc[2].Color = p.color end
+    end
+end)
+
+task.defer(function() subOn(btnVsE, ulVsE) end)
+btnVsE.MouseButton1Click:Connect(function()
+    subOn(btnVsE,ulVsE); subOff(btnVsT,ulVsT); subOff(btnVsC,ulVsC)
+    cEsp.Visible=true; cTrc.Visible=false; cVCol.Visible=false
+end)
+btnVsT.MouseButton1Click:Connect(function()
+    subOff(btnVsE,ulVsE); subOn(btnVsT,ulVsT); subOff(btnVsC,ulVsC)
+    cEsp.Visible=false; cTrc.Visible=true; cVCol.Visible=false
+end)
+btnVsC.MouseButton1Click:Connect(function()
+    subOff(btnVsE,ulVsE); subOff(btnVsT,ulVsT); subOn(btnVsC,ulVsC)
+    cEsp.Visible=false; cTrc.Visible=false; cVCol.Visible=true
+end)
+
+-- ══════════════════════════════════════════
+--  COMBAT PAGE  (Aim | Fov)
+-- ══════════════════════════════════════════
+local combatNav          = mkSubNav(pgCombat)
+local btnCbA, ulCbA     = mkSubBtn("Aim", combatNav,  0, 34)
+local btnCbF, ulCbF     = mkSubBtn("Fov", combatNav, 38, 34)
+
+local cAim = mkSubCont(pgCombat); cAim.Visible = true
+local cFov = mkSubCont(pgCombat)
+
+local tAimbot,    iAimbot    = mkToggle("Aimlock  [Hold RMB]", cAim, 1)
+local tSilentAim, iSilentAim = mkToggle("Silent Aim",          cAim, 2)
+
+local aimInfo = Instance.new("TextLabel", cAim)
+aimInfo.Size = UDim2.new(0.95,0,0,16); aimInfo.BackgroundTransparency = 1
+aimInfo.Text = "  Aimlock: hold RMB  |  Silent: auto on LMB"
+aimInfo.Font = Enum.Font.Gotham; aimInfo.TextSize = 9
+aimInfo.TextColor3 = Color3.fromRGB(90,90,100)
+aimInfo.TextXAlignment = Enum.TextXAlignment.Left; aimInfo.LayoutOrder = 3
+
+mkLabel("Aimlock method", cAim, 4)
+mkDropdown(cAim, 5, AIMLOCK_METHODS, function(p)
+    aimlockMethod = p.mode
+end)
+
+local tAimFov, iAimFov = mkToggle("Aimlock FOV",    cFov, 1)
+local tSaFov,  iSaFov  = mkToggle("Silent Aim FOV", cFov, 2)
+
+mkSlider(cFov, 3, "Aimlock FOV radius",  FOV_MIN, FOV_MAX, aimFovRadius, function(v)
+    aimFovRadius = v; aimFovCircle.Size = UDim2.new(0,v*2,0,v*2)
+end)
+mkSlider(cFov, 4, "Silent Aim FOV radius", FOV_MIN, FOV_MAX, saFovRadius, function(v)
+    saFovRadius = v; saFovCircle.Size = UDim2.new(0,v*2,0,v*2)
+end)
+
+mkLabel("FOV Circle Color", cFov, 5)
+local _, dropFovStroke = mkDropdown(cFov, 6, COLOR_PRESETS, function(p)
+    fovColorMode = p.mode
+    if p.mode == "fixed" then
+        fixedFovColor = p.color
+        aimFovStroke.Color = p.color; saFovStroke.Color = p.color
+    end
+end)
+
+task.defer(function() subOn(btnCbA, ulCbA) end)
+btnCbA.MouseButton1Click:Connect(function()
+    subOn(btnCbA,ulCbA); subOff(btnCbF,ulCbF)
+    cAim.Visible=true; cFov.Visible=false
+end)
+btnCbF.MouseButton1Click:Connect(function()
+    subOff(btnCbA,ulCbA); subOn(btnCbF,ulCbF)
+    cFov.Visible=true; cAim.Visible=false
+end)
+
+-- ══════════════════════════════════════════
+--  SETTINGS PAGE  (Menu | Color | Other)
+--  ALL containers declared BEFORE callbacks
+-- ══════════════════════════════════════════
+local settNav            = mkSubNav(pgSett)
+local btnStM, ulStM     = mkSubBtn("Menu",  settNav,  0, 42)
+local btnStC, ulStC     = mkSubBtn("Color", settNav, 46, 44)
+local btnStO, ulStO     = mkSubBtn("Other", settNav, 94, 44)
+
+local cMenu  = mkSubCont(pgSett); cMenu.Visible = true
+local cStCol = mkSubCont(pgSett)
+local cOther = mkSubCont(pgSett)
+
+-- Menu sub-tab content
+local tGlass,   iGlass   = mkToggle("Glass Mode",  cMenu, 1)
+local tOutline, iOutline = mkToggle("Menu Outline", cMenu, 2)
+iOutline.BackgroundColor3 = Color3.fromRGB(0,255,150)
+
+mkLabel("Themes", cMenu, 3)
+mkDropdown(cMenu, 4, THEMES_PRESETS, function(_) end) -- no function yet
+
+-- Color sub-tab content (border color + accent)
+mkLabel("Menu border color", cStCol, 1)
+local _, dropStrkStroke = mkDropdown(cStCol, 2, COLOR_PRESETS, function(p)
+    strokeColorMode = p.mode
+    if p.mode == "fixed" then
+        fixedStrokeColor = p.color
+        stroke.Color = p.color; openStroke.Color = p.color
+    end
+end)
+
+mkLabel("Accent", cStCol, 3)
+mkDropdown(cStCol, 4, ACCENT_PRESETS, function(p)
+    if p.mode == "default" then applyAccent(nil) else applyAccent(p.color) end
+end)
+
+-- Other sub-tab content
+local tDexter, iDexter = mkToggle("67", cOther, 1)
+
+-- Settings navigation callbacks (declared AFTER all containers)
+task.defer(function() subOn(btnStM, ulStM) end)
+btnStM.MouseButton1Click:Connect(function()
+    subOn(btnStM,ulStM); subOff(btnStC,ulStC); subOff(btnStO,ulStO)
+    cMenu.Visible=true; cStCol.Visible=false; cOther.Visible=false
+end)
+btnStC.MouseButton1Click:Connect(function()
+    subOff(btnStM,ulStM); subOn(btnStC,ulStC); subOff(btnStO,ulStO)
+    cMenu.Visible=false; cStCol.Visible=true; cOther.Visible=false
+end)
+btnStO.MouseButton1Click:Connect(function()
+    subOff(btnStM,ulStM); subOff(btnStC,ulStC); subOn(btnStO,ulStO)
+    cMenu.Visible=false; cStCol.Visible=false; cOther.Visible=true
+end)
+
+-- ══════════════════════════════════════════
+--  GLASS MODE
+-- ══════════════════════════════════════════
+local function refreshGlass()
+    main.BackgroundTransparency    = glassMode and 0.25 or 0
+    sideBar.BackgroundTransparency = glassMode and 0.40 or 0
+    openBtn.BackgroundTransparency = glassMode and 0.25 or 0
+    for _, b in pairs(allToggles) do
+        b.BackgroundTransparency = glassMode and 0.6 or 0
+        b.BackgroundColor3 = glassMode and Color3.fromRGB(15,15,20) or Color3.fromRGB(25,25,30)
+    end
+end
+
+-- ══════════════════════════════════════════
+--  MAIN NAVIGATION
+-- ══════════════════════════════════════════
+local ITAB = Color3.fromRGB(30,30,35)
+local ATAB = Color3.fromRGB(50,50,70)
+local tabs = {
+    {page=pgMisc,    label="MISC",     btn=btnMisc},
+    {page=pgVisuals, label="VISUALS",  btn=btnVis},
+    {page=pgCombat,  label="COMBAT",   btn=btnCombat},
+    {page=pgSett,    label="SETTINGS", btn=btnSett},
+}
+local function openTab(t)
+    for _, v in ipairs(tabs) do
+        v.page.Visible = (v==t)
+        v.btn.BackgroundColor3 = (v==t) and ATAB or ITAB
+    end
+    titleLbl.Text = t.label
+end
+for _, t in ipairs(tabs) do t.btn.MouseButton1Click:Connect(function() openTab(t) end) end
+openTab(tabs[1])
+
+-- ══════════════════════════════════════════
+--  SETTINGS LOGIC
+-- ══════════════════════════════════════════
+tGlass.MouseButton1Click:Connect(function()
+    glassMode = not glassMode; setT(tGlass,iGlass,glassMode,Color3.new(1,1,1)); refreshGlass()
+end)
+tOutline.MouseButton1Click:Connect(function()
+    outlineEnabled = not outlineEnabled
+    setT(tOutline,iOutline,outlineEnabled,Color3.fromRGB(0,255,150))
+    stroke.Enabled=outlineEnabled; openStroke.Enabled=outlineEnabled
+end)
+
+-- ══════════════════════════════════════════
+--  WALKSPEED
+-- ══════════════════════════════════════════
+tSpeed.MouseButton1Click:Connect(function()
+    walkSpeedEnabled = not walkSpeedEnabled
+    setT(tSpeed,iSpeed,walkSpeedEnabled,Color3.fromRGB(0,255,150))
+    if not walkSpeedEnabled then
+        local c = player.Character
+        if c and c:FindFirstChild("Humanoid") then c.Humanoid.WalkSpeed=16 end
+    end
+end)
+RunService.Heartbeat:Connect(function()
+    if not walkSpeedEnabled then return end
+    local c = player.Character
+    if c and c:FindFirstChild("Humanoid") then c.Humanoid.WalkSpeed=walkSpeedValue end
+end)
+
+-- ══════════════════════════════════════════
+--  FLY  (AssemblyLinearVelocity)
+-- ══════════════════════════════════════════
+tFly.MouseButton1Click:Connect(function()
+    flying = not flying; setT(tFly,iFly,flying,Color3.fromRGB(0,150,255))
+    local char = player.Character
+    if char then
+        local hum  = char:FindFirstChild("Humanoid")
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if flying then
+            if not root then flying=false; setT(tFly,iFly,false,Color3.fromRGB(0,150,255)); return end
+            if hum then hum.PlatformStand=true end
+        else
+            if root then root.AssemblyLinearVelocity=Vector3.zero end
+            if hum  then hum.PlatformStand=false end
+        end
+    end
+end)
+
+-- ══════════════════════════════════════════
+--  NOCLIP
+-- ══════════════════════════════════════════
+tNoclip.MouseButton1Click:Connect(function()
+    noclip = not noclip; setT(tNoclip,iNoclip,noclip,Color3.fromRGB(180,50,255))
+    if not noclip and player.Character then
+        for _, v in ipairs(player.Character:GetDescendants()) do
+            if v:IsA("BasePart") then v.CanCollide=true end
+        end
+    end
+end)
+RunService.Stepped:Connect(function()
+    if not noclip or not player.Character then return end
+    for _, v in ipairs(player.Character:GetDescendants()) do
+        if v:IsA("BasePart") then v.CanCollide=false end
+    end
+end)
+
+-- ══════════════════════════════════════════
+--  CLICK TP
+-- ══════════════════════════════════════════
+tClickTp.MouseButton1Click:Connect(function()
+    clickTpEnabled = not clickTpEnabled
+    setT(tClickTp,iClickTp,clickTpEnabled,Color3.fromRGB(0,220,255))
+end)
+
+UserInputService.InputBegan:Connect(function(inp, processed)
+    if not clickTpEnabled or processed then return end
+    if inp.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+    local cam = workspace.CurrentCamera
+    local ml  = UserInputService:GetMouseLocation()
+    local ray = cam:ViewportPointToRay(ml.X, ml.Y)
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Exclude
+    if player.Character then params.FilterDescendantsInstances={player.Character} end
+    local result = workspace:Raycast(ray.Origin, ray.Direction*2000, params)
+    if result then
+        local char = player.Character
+        if char and char:FindFirstChild("HumanoidRootPart") then
+            char.HumanoidRootPart.CFrame = CFrame.new(result.Position + Vector3.new(0,3,0))
+        end
+    end
+end)
+
+-- ══════════════════════════════════════════
+--  HIGHLIGHT ESP
+-- ══════════════════════════════════════════
+local function getVisColor()
+    return visualColorMode=="fixed" and fixedVisualColor or Color3.new(1,0,0)
+end
+
+local function addHighlight(p)
+    if not highlightEnabled or p==player then return end
+    local char = p.Character or p.CharacterAdded:Wait()
+    if not highlightEnabled then return end
+    if espHighlights[p.UserId] then espHighlights[p.UserId]:Destroy() end
+    local h = Instance.new("Highlight")
+    h.Adornee=char; h.FillTransparency=1; h.OutlineColor=getVisColor(); h.Parent=sg
+    espHighlights[p.UserId] = h
+end
+local function removeHighlight(uid)
+    if espHighlights[uid] then espHighlights[uid]:Destroy(); espHighlights[uid]=nil end
+end
+
+tHighlight.MouseButton1Click:Connect(function()
+    highlightEnabled = not highlightEnabled
+    setT(tHighlight,iHighlight,highlightEnabled,Color3.fromRGB(255,50,50))
+    if highlightEnabled then
+        for _, p in ipairs(Players:GetPlayers()) do task.spawn(addHighlight, p) end
+    else
+        for uid in pairs(espHighlights) do removeHighlight(uid) end
+    end
+end)
+
+-- ══════════════════════════════════════════
+--  2D BOXES
+-- ══════════════════════════════════════════
+local function getOrCreateBox(uid)
+    if boxFrames[uid] then return boxFrames[uid][1], boxFrames[uid][2] end
+    local f = Instance.new("Frame", canvas)
+    f.BackgroundTransparency=1; f.BorderSizePixel=0; f.Visible=false
+    local st = Instance.new("UIStroke", f); st.Thickness=1.5
+    boxFrames[uid]={f,st}; return f, st
+end
+local function removeBox(uid)
+    if boxFrames[uid] then boxFrames[uid][1]:Destroy(); boxFrames[uid]=nil end
+end
+
+tBoxes.MouseButton1Click:Connect(function()
+    boxesEnabled = not boxesEnabled
+    setT(tBoxes,iBoxes,boxesEnabled,Color3.fromRGB(255,160,0))
+    if not boxesEnabled then for uid in pairs(boxFrames) do removeBox(uid) end end
+end)
+
+-- ══════════════════════════════════════════
+--  HEAD CIRCLES
+-- ══════════════════════════════════════════
+local function getOrCreateHeadCircle(uid)
+    if headCircles[uid] then return headCircles[uid][1], headCircles[uid][2] end
+    local f = Instance.new("Frame", canvas)
+    f.AnchorPoint = Vector2.new(0.5,0.5); f.Size = UDim2.new(0,20,0,20)
+    f.BackgroundTransparency=1; f.BorderSizePixel=0; f.Visible=false
+    Instance.new("UICorner", f).CornerRadius = UDim.new(1,0)
+    local st = Instance.new("UIStroke", f); st.Thickness=1.4
+    headCircles[uid]={f,st}; return f, st
+end
+local function removeHeadCircle(uid)
+    if headCircles[uid] then headCircles[uid][1]:Destroy(); headCircles[uid]=nil end
+end
+
+tHead.MouseButton1Click:Connect(function()
+    headEnabled = not headEnabled
+    setT(tHead,iHead,headEnabled,Color3.fromRGB(0,220,255))
+    if not headEnabled then for uid in pairs(headCircles) do removeHeadCircle(uid) end end
+end)
+
+-- ══════════════════════════════════════════
+--  TRACERS
+-- ══════════════════════════════════════════
+local function getOrCreateTracer(uid)
+    if tracerFrames[uid] then return tracerFrames[uid] end
+    local f = Instance.new("Frame", canvas)
+    f.AnchorPoint=Vector2.new(0.5,0.5); f.Size=UDim2.new(0,1,0,2)
+    f.BackgroundColor3=Color3.new(1,1,1); f.BorderSizePixel=0; f.Visible=false
+    Instance.new("UICorner", f).CornerRadius=UDim.new(1,0)
+    tracerFrames[uid]=f; return f
+end
+local function removeTracer(uid)
+    if tracerFrames[uid] then tracerFrames[uid]:Destroy(); tracerFrames[uid]=nil end
+end
+
+tTracers.MouseButton1Click:Connect(function()
+    tracersEnabled = not tracersEnabled
+    setT(tTracers,iTracers,tracersEnabled,Color3.fromRGB(255,160,0))
+    if not tracersEnabled then for uid in pairs(tracerFrames) do removeTracer(uid) end end
+end)
+
+-- ══════════════════════════════════════════
+--  AIMBOT TOGGLES
+-- ══════════════════════════════════════════
+tAimbot.MouseButton1Click:Connect(function()
+    aimbotEnabled = not aimbotEnabled
+    setT(tAimbot,iAimbot,aimbotEnabled,Color3.fromRGB(255,80,80))
+end)
+tSilentAim.MouseButton1Click:Connect(function()
+    silentAimEnabled = not silentAimEnabled
+    setT(tSilentAim,iSilentAim,silentAimEnabled,Color3.fromRGB(255,120,0))
+end)
+
+-- ══════════════════════════════════════════
+--  FOV TOGGLES
+-- ══════════════════════════════════════════
+tAimFov.MouseButton1Click:Connect(function()
+    aimFovEnabled = not aimFovEnabled
+    setT(tAimFov,iAimFov,aimFovEnabled,Color3.fromRGB(255,200,0))
+    aimFovCircle.Visible = aimFovEnabled
+end)
+tSaFov.MouseButton1Click:Connect(function()
+    saFovEnabled = not saFovEnabled
+    setT(tSaFov,iSaFov,saFovEnabled,Color3.fromRGB(255,160,0))
+    saFovCircle.Visible = saFovEnabled
+end)
+
+-- ══════════════════════════════════════════
+--  DEXTER (no function)
+-- ══════════════════════════════════════════
+tDexter.MouseButton1Click:Connect(function()
+    dexterState = not dexterState
+    setT(tDexter,iDexter,dexterState,Color3.fromRGB(100,200,255))
+end)
+
+-- ══════════════════════════════════════════
+--  PLAYER EVENTS
+-- ══════════════════════════════════════════
+Players.PlayerAdded:Connect(function(p)
+    task.spawn(addHighlight, p)
+    p.CharacterAdded:Connect(function()
+        if highlightEnabled then task.spawn(addHighlight, p) end
+    end)
+end)
+Players.PlayerRemoving:Connect(function(p)
+    removeHighlight(p.UserId); removeBox(p.UserId)
+    removeHeadCircle(p.UserId); removeTracer(p.UserId)
+end)
+
+-- ══════════════════════════════════════════
+--  SILENT AIM  (smooth cursor nudge over multiple frames)
+-- ══════════════════════════════════════════
+UserInputService.InputBegan:Connect(function(inp, processed)
+    if not silentAimEnabled or processed then return end
+    if inp.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+    local cam      = workspace.CurrentCamera
+    local mousePos = UserInputService:GetMouseLocation()
+    local best, bestDist = nil, math.huge
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= player and p.Character then
+            local head = p.Character:FindFirstChild("Head")
+            if head then
+                local sp, ok = cam:WorldToViewportPoint(head.Position)
+                if ok and sp.Z > 0 then
+                    local d = (Vector2.new(sp.X, sp.Y) - mousePos).Magnitude
+                    if d < saFovRadius and d < bestDist then
+                        bestDist = d; best = head
+                    end
+                end
+            end
+        end
+    end
+    if best then
+        -- Spread the movement across 5 frames so it looks human
+        task.spawn(function()
+            local steps = 5
+            for i = 1, steps do
+                local sp   = cam:WorldToViewportPoint(best.Position)
+                local cur  = UserInputService:GetMouseLocation()
+                local tgt  = Vector2.new(sp.X, sp.Y)
+                -- Move a fraction of the remaining distance each step
+                local frac = 1 / (steps - i + 1)
+                local dx   = (tgt.X - cur.X) * frac
+                local dy   = (tgt.Y - cur.Y) * frac
+                pcall(function() mousemoverel(dx, dy) end)
+                RunService.RenderStepped:Wait()
+            end
+        end)
+    end
+end)
+
+-- ══════════════════════════════════════════
+--  MAIN RENDER LOOP
+-- ══════════════════════════════════════════
+RunService.RenderStepped:Connect(function()
+    local cam    = workspace.CurrentCamera
+    local vp     = cam.ViewportSize
+    local origin = tracerOriginBottom
+        and Vector2.new(vp.X/2, vp.Y)   -- bottom center
+        or  Vector2.new(vp.X/2, 0)      -- top center (default)
+
+    -- Cursor position (used by FOV circles + aimbot target search)
+    local mousePos = UserInputService:GetMouseLocation()
+
+    -- FOV circles follow cursor
+    if aimFovEnabled then
+        aimFovCircle.Position = UDim2.new(0, mousePos.X, 0, mousePos.Y)
+    end
+    if saFovEnabled then
+        saFovCircle.Position = UDim2.new(0, mousePos.X, 0, mousePos.Y)
+    end
+
+    -- Current visual + FOV colors
+    local vColor = visualColorMode=="rgb" and Color3.fromHSV(tick()%5/5, 0.85, 1) or fixedVisualColor
+    local fColor = fovColorMode=="rgb"    and Color3.fromHSV(tick()%5/5, 0.6,  1) or fixedFovColor
+
+    if aimFovEnabled then aimFovStroke.Color = fColor end
+    if saFovEnabled  then saFovStroke.Color  = fColor end
+
+    -- Update RGB highlight outlines
+    if highlightEnabled and visualColorMode=="rgb" then
+        for _, h in pairs(espHighlights) do h.OutlineColor=vColor end
+    end
+
+    -- Fly movement
+    if flying then
+        local char = player.Character
+        if char then
+            local root = char:FindFirstChild("HumanoidRootPart")
+            if root then
+                local cf  = cam.CFrame; local dir = Vector3.zero
+                if UserInputService:IsKeyDown(Enum.KeyCode.W)           then dir=dir+cf.LookVector  end
+                if UserInputService:IsKeyDown(Enum.KeyCode.S)           then dir=dir-cf.LookVector  end
+                if UserInputService:IsKeyDown(Enum.KeyCode.A)           then dir=dir-cf.RightVector end
+                if UserInputService:IsKeyDown(Enum.KeyCode.D)           then dir=dir+cf.RightVector end
+                if UserInputService:IsKeyDown(Enum.KeyCode.Space)       then dir=dir+Vector3.new(0,1,0) end
+                if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then dir=dir-Vector3.new(0,1,0) end
+                root.AssemblyLinearVelocity = dir.Magnitude>0 and dir.Unit*flySpeed or Vector3.zero
+            end
+        end
+    end
+
+    -- Per-player visuals + aimbot search
+    local active = {}
+    local aimbotTarget, closestDist = nil, math.huge
+
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= player and p.Character then
+            local char = p.Character
+            local head = char:FindFirstChild("Head")
+            local root = char:FindFirstChild("HumanoidRootPart")
+            if head and root then
+                -- Screen projections
+                local hsp, hOk = cam:WorldToViewportPoint(head.Position + Vector3.new(0, 0.65, 0))
+                local fsp, fOk = cam:WorldToViewportPoint(root.Position - Vector3.new(0, 3.1, 0))
+                local hcSp     = cam:WorldToViewportPoint(head.Position)  -- head center for circle
+                local inFront  = hOk and fOk and hsp.Z>0 and fsp.Z>0
+
+                active[p.UserId] = true
+
+                -- 2D Box
+                if boxesEnabled then
+                    local bf, bs = getOrCreateBox(p.UserId)
+                    if inFront then
+                        local bh = math.abs(fsp.Y - hsp.Y)
+                        local bw = bh * 0.55
+                        bf.Position = UDim2.new(0, (hsp.X+fsp.X)*0.5 - bw*0.5, 0, hsp.Y)
+                        bf.Size     = UDim2.new(0, bw, 0, bh)
+                        bs.Color=vColor; bf.Visible=true
+                    else bf.Visible=false end
+                end
+
+                -- Head circle (sized to match head in screen space)
+                if headEnabled then
+                    local hf, hs = getOrCreateHeadCircle(p.UserId)
+                    if inFront then
+                        -- Estimate screen radius from head: project a point 0.5 studs away
+                        local edgeSp = cam:WorldToViewportPoint(head.Position + Vector3.new(0.5, 0, 0))
+                        local screenR = math.max(7, math.abs(hcSp.X - edgeSp.X) + 2)
+                        hf.Position = UDim2.new(0, hcSp.X, 0, hcSp.Y)
+                        hf.Size     = UDim2.new(0, screenR*2, 0, screenR*2)
+                        hs.Color=vColor; hf.Visible=true
+                    else hf.Visible=false end
+                end
+
+                -- Tracer
+                if tracersEnabled then
+                    local tf = getOrCreateTracer(p.UserId)
+                    if inFront then
+                        local dx = hsp.X - origin.X; local dy = hsp.Y - origin.Y
+                        tf.Position = UDim2.new(0,(origin.X+hsp.X)*0.5, 0,(origin.Y+hsp.Y)*0.5)
+                        tf.Size     = UDim2.new(0, math.sqrt(dx*dx+dy*dy), 0, 2)
+                        tf.Rotation = math.deg(math.atan2(dy, dx))
+                        tf.BackgroundColor3=vColor; tf.Visible=true
+                    else tf.Visible=false end
+                end
+
+                -- Aimbot search: closest head to CURSOR within aimFovRadius
+                if aimbotEnabled and inFront then
+                    local d = (Vector2.new(hsp.X, hsp.Y) - mousePos).Magnitude
+                    if d < aimFovRadius and d < closestDist then
+                        closestDist=d; aimbotTarget=head
+                    end
+                end
+            end
+        end
+    end
+
+    -- Cleanup orphaned elements
+    for uid in pairs(boxFrames)    do if not active[uid] then removeBox(uid)         end end
+    for uid in pairs(headCircles)  do if not active[uid] then removeHeadCircle(uid)  end end
+    for uid in pairs(tracerFrames) do if not active[uid] then removeTracer(uid)      end end
+
+    -- Aimbot: lock with chosen method, hold RMB
+    if aimbotEnabled and aimbotTarget
+        and UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
+        if aimlockMethod == "camera" then
+            -- Direct camera snap to head
+            cam.CFrame = CFrame.new(cam.CFrame.Position, aimbotTarget.Position)
+        else
+            -- Cursor method: smooth relative nudge toward target each frame
+            local sp  = cam:WorldToViewportPoint(aimbotTarget.Position)
+            local cur = UserInputService:GetMouseLocation()
+            local dx  = sp.X - cur.X
+            local dy  = sp.Y - cur.Y
+            -- 0.35 factor: fast enough to lock, smooth enough not to snap
+            pcall(function() mousemoverel(dx * 0.35, dy * 0.35) end)
+        end
+    end
+end)
+
+-- ══════════════════════════════════════════
+--  RGB LOOP
+-- ══════════════════════════════════════════
+task.spawn(function()
+    while true do
+        local c = Color3.fromHSV(tick()%5/5, 0.6, 1)
+        rgbLine.BackgroundColor3 = c
+        if strokeColorMode == "rgb" then
+            stroke.Color = c; openStroke.Color = c; dropStrkStroke.Color = c
+        end
+        for _, ul in ipairs(allSubUnderlines) do
+            if ul.Size.X.Offset > 0 then ul.BackgroundColor3 = c end
+        end
+        RunService.Heartbeat:Wait()
+    end
+end)
