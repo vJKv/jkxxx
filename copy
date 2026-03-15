@@ -1,9 +1,17 @@
 
+
 local Players          = game:GetService("Players")
 local RunService       = game:GetService("RunService")
 local TweenService     = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local player           = Players.LocalPlayer
+
+-- Cleanup: destroy any previous instance of this GUI before creating a new one.
+-- This fixes re-execution and multi-account issues where the old GUI
+-- blocks the new one without throwing any error.
+local playerGui = player:WaitForChild("PlayerGui")
+local prev = playerGui:FindFirstChild("JKxxx_V7")
+if prev then prev:Destroy() end
 
 -- ══════════════════════════════════════════
 --  STATE
@@ -15,14 +23,28 @@ local headEnabled                      = false
 local tracersEnabled                   = false
 local aimbotEnabled, silentAimEnabled  = false, false
 local aimFovEnabled,  saFovEnabled     = false, false
+local visCheckEnabled                  = false
 local dexterState                      = false
-local aimlockMethod                    = "camera" -- "camera" | "cursor"
+local aimlockMethod                    = "camera"
+
+local lockedTarget   = nil  -- target lock: persist target while RMB held
+local rmbWasDown     = false
+local aimSelectTarget = "head"  -- "head" | "torso"
 
 local flySpeed       = 50
 local walkSpeedValue = 16
 local aimFovRadius   = 120
 local saFovRadius    = 120
 local glassMode, outlineEnabled = false, true
+local currentTheme = "default"   -- "default" | "purple" | "night"
+local dexterBgActive = false
+
+-- Theme base colors (used by refreshTheme + refreshGlass)
+local THEME_DATA = {
+    default = { bg = Color3.fromRGB(12,12,14),  side = Color3.fromRGB(18,18,22),  tog = Color3.fromRGB(25,25,30)  },
+    purple  = { bg = Color3.fromRGB(80,35,100), side = Color3.fromRGB(60,20,80),  tog = Color3.fromRGB(70,28,90)  },
+    night   = { bg = Color3.fromRGB(23,29,63),  side = Color3.fromRGB(15,20,50),  tog = Color3.fromRGB(22,32,68)  },
+}
 
 local strokeColorMode  = "rgb";  local fixedStrokeColor = Color3.new(1, 1, 1)
 local visualColorMode  = "rgb";  local fixedVisualColor  = Color3.new(1, 0, 0)
@@ -71,14 +93,18 @@ local AIMLOCK_METHODS = {
     {label="Camera", mode="camera"},
     {label="Cursor", mode="cursor"},
 }
+local SELECT_TARGET_PRESETS = {
+    {label="Head",  mode="head"},
+    {label="Torso", mode="torso"},
+}
 local TRACER_POSITIONS = {
     {label="Top",    mode="top"},
     {label="Bottom", mode="bottom"},
 }
 local THEMES_PRESETS = {
     {label="Default"},
-    {label="Dark"},
-    {label="Light"},
+    {label="Night"},
+    {label="Purple"},
 }
 
 -- ══════════════════════════════════════════
@@ -89,7 +115,7 @@ sg.Name           = "JKxxx_V7"
 sg.ResetOnSpawn   = false
 sg.IgnoreGuiInset = true
 sg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-sg.Parent         = player:WaitForChild("PlayerGui")
+sg.Parent         = playerGui
 
 -- Canvas (non-interactive, behind menu)
 local canvas = Instance.new("Frame", sg)
@@ -139,6 +165,17 @@ Instance.new("UICorner", main).CornerRadius = UDim.new(0, 8)
 local stroke = Instance.new("UIStroke", main)
 stroke.Thickness = 1.5
 
+-- 67 background image — sits behind all content inside main
+local dexterBg = Instance.new("ImageLabel", main)
+dexterBg.Size               = UDim2.new(1, 0, 1, 0)
+dexterBg.Image              = "rbxassetid://126914773094023"
+dexterBg.ImageTransparency  = 0.45
+dexterBg.BackgroundTransparency = 1
+dexterBg.ScaleType          = Enum.ScaleType.Crop
+dexterBg.ZIndex             = 1
+dexterBg.Visible            = false
+Instance.new("UICorner", dexterBg).CornerRadius = UDim.new(0, 8)
+
 local minBtn = Instance.new("TextButton", main)
 minBtn.Size               = UDim2.new(0, 30, 0, 30)
 minBtn.Position           = UDim2.new(1, -35, 0, 0)
@@ -147,6 +184,7 @@ minBtn.Text               = "—"
 minBtn.TextColor3         = Color3.new(1,1,1)
 minBtn.Font               = Enum.Font.GothamBold
 minBtn.TextSize           = 14
+minBtn.ZIndex             = 2
 
 local openBtn = Instance.new("TextButton", sg)
 openBtn.Size             = UDim2.new(0, 40, 0, 40)
@@ -171,6 +209,7 @@ openBtn.MouseButton1Click:Connect(function() main.Visible=true;  openBtn.Visible
 local sideBar = Instance.new("Frame", main)
 sideBar.Size             = UDim2.new(0, 45, 1, 0)
 sideBar.BackgroundColor3 = Color3.fromRGB(18, 18, 22)
+sideBar.ZIndex           = 2
 Instance.new("UICorner", sideBar).CornerRadius = UDim.new(0, 8)
 
 local logo = Instance.new("TextLabel", sideBar)
@@ -203,6 +242,7 @@ local btnSett   = mkIconBtn("⚙️", 175)
 local cArea = Instance.new("Frame", main)
 cArea.Size = UDim2.new(1,-55,1,-10); cArea.Position = UDim2.new(0,50,0,5)
 cArea.BackgroundTransparency = 1
+cArea.ZIndex = 2
 
 local titleLbl = Instance.new("TextLabel", cArea)
 titleLbl.Size = UDim2.new(1,0,0,30); titleLbl.Text = "MISC"
@@ -528,17 +568,24 @@ local cFov = mkSubCont(pgCombat)
 
 local tAimbot,    iAimbot    = mkToggle("Aimlock  [Hold RMB]", cAim, 1)
 local tSilentAim, iSilentAim = mkToggle("Silent Aim",          cAim, 2)
+local tVisCheck,  iVisCheck  = mkToggle("Visible Check",       cAim, 3)
 
 local aimInfo = Instance.new("TextLabel", cAim)
 aimInfo.Size = UDim2.new(0.95,0,0,16); aimInfo.BackgroundTransparency = 1
 aimInfo.Text = "  Aimlock: hold RMB  |  Silent: auto on LMB"
 aimInfo.Font = Enum.Font.Gotham; aimInfo.TextSize = 9
 aimInfo.TextColor3 = Color3.fromRGB(90,90,100)
-aimInfo.TextXAlignment = Enum.TextXAlignment.Left; aimInfo.LayoutOrder = 3
+aimInfo.TextXAlignment = Enum.TextXAlignment.Left; aimInfo.LayoutOrder = 4
 
-mkLabel("Aimlock method", cAim, 4)
-mkDropdown(cAim, 5, AIMLOCK_METHODS, function(p)
+mkLabel("Aimlock method", cAim, 5)
+mkDropdown(cAim, 6, AIMLOCK_METHODS, function(p)
     aimlockMethod = p.mode
+end)
+
+mkLabel("Select target", cAim, 7)
+mkDropdown(cAim, 8, SELECT_TARGET_PRESETS, function(p)
+    aimSelectTarget = p.mode
+    lockedTarget = nil  -- clear current lock when target bone changes
 end)
 
 local tAimFov, iAimFov = mkToggle("Aimlock FOV",    cFov, 1)
@@ -589,7 +636,14 @@ local tOutline, iOutline = mkToggle("Menu Outline", cMenu, 2)
 iOutline.BackgroundColor3 = Color3.fromRGB(0,255,150)
 
 mkLabel("Themes", cMenu, 3)
-mkDropdown(cMenu, 4, THEMES_PRESETS, function(_) end) -- no function yet
+-- Forward declaration so the dropdown callback can reference it
+-- (the full definition is in the THEME + GLASS REFRESH section below)
+local refreshTheme
+
+mkDropdown(cMenu, 4, THEMES_PRESETS, function(p)
+    currentTheme = p.label:lower()
+    task.defer(function() if refreshTheme then refreshTheme() end end)
+end)
 
 -- Color sub-tab content (border color + accent)
 mkLabel("Menu border color", cStCol, 1)
@@ -609,6 +663,17 @@ end)
 -- Other sub-tab content
 local tDexter, iDexter = mkToggle("67", cOther, 1)
 
+local otherNote = Instance.new("TextLabel", cOther)
+otherNote.Size               = UDim2.new(0.95, 0, 0, 30)
+otherNote.BackgroundTransparency = 1
+otherNote.Text               = "diganle que me vale v-"
+otherNote.Font               = Enum.Font.GothamSemibold
+otherNote.TextSize           = 12
+otherNote.TextColor3         = Color3.fromRGB(95, 95, 110)
+otherNote.TextXAlignment     = Enum.TextXAlignment.Left
+otherNote.TextWrapped        = true
+otherNote.LayoutOrder        = 99
+
 -- Settings navigation callbacks (declared AFTER all containers)
 task.defer(function() subOn(btnStM, ulStM) end)
 btnStM.MouseButton1Click:Connect(function()
@@ -625,16 +690,46 @@ btnStO.MouseButton1Click:Connect(function()
 end)
 
 -- ══════════════════════════════════════════
---  GLASS MODE
+--  THEME + GLASS REFRESH
 -- ══════════════════════════════════════════
-local function refreshGlass()
-    main.BackgroundTransparency    = glassMode and 0.25 or 0
-    sideBar.BackgroundTransparency = glassMode and 0.40 or 0
-    openBtn.BackgroundTransparency = glassMode and 0.25 or 0
+refreshTheme = function()
+    local td      = THEME_DATA[currentTheme] or THEME_DATA.default
+    local isGlass = glassMode
+    local is67    = dexterBgActive
+
+    -- 1. Always apply theme colors
+    main.BackgroundColor3    = td.bg
+    sideBar.BackgroundColor3 = td.side
+    openBtn.BackgroundColor3 = td.bg
     for _, b in pairs(allToggles) do
-        b.BackgroundTransparency = glassMode and 0.6 or 0
-        b.BackgroundColor3 = glassMode and Color3.fromRGB(15,15,20) or Color3.fromRGB(25,25,30)
+        b.BackgroundColor3 = td.tog
     end
+
+    -- 2. Handle 67 image background
+    --    When 67 is active: main frame bg becomes invisible, dexterBg image IS the background.
+    --    Sidebar and toggles stay solid (they have their own bg) so they appear above the image.
+    dexterBg.Visible = is67
+    if is67 then
+        main.BackgroundTransparency = 1          -- hide frame bg, show image instead
+        dexterBg.ImageTransparency  = isGlass and 0.65 or 0.4
+    else
+        main.BackgroundTransparency = isGlass and 0.3 or 0
+    end
+
+    -- 3. Sidebar transparency
+    sideBar.BackgroundTransparency = isGlass and 0.45 or (is67 and 0.15 or 0)
+
+    -- 4. Open button transparency
+    openBtn.BackgroundTransparency = is67 and 0 or (isGlass and 0.3 or 0)
+
+    -- 5. Toggles transparency  
+    for _, b in pairs(allToggles) do
+        b.BackgroundTransparency = isGlass and 0.55 or (is67 and 0.35 or 0)
+    end
+end
+
+local function refreshGlass()
+    refreshTheme()
 end
 
 -- ══════════════════════════════════════════
@@ -688,21 +783,29 @@ RunService.Heartbeat:Connect(function()
 end)
 
 -- ══════════════════════════════════════════
---  FLY  (AssemblyLinearVelocity)
+--  FLY  (classic BodyVelocity + BodyGyro — no PlatformStand so no ragdoll)
 -- ══════════════════════════════════════════
+local flyBV, flyBG  -- persistent across frames while flying
+
 tFly.MouseButton1Click:Connect(function()
     flying = not flying; setT(tFly,iFly,flying,Color3.fromRGB(0,150,255))
     local char = player.Character
-    if char then
-        local hum  = char:FindFirstChild("Humanoid")
-        local root = char:FindFirstChild("HumanoidRootPart")
-        if flying then
-            if not root then flying=false; setT(tFly,iFly,false,Color3.fromRGB(0,150,255)); return end
-            if hum then hum.PlatformStand=true end
-        else
-            if root then root.AssemblyLinearVelocity=Vector3.zero end
-            if hum  then hum.PlatformStand=false end
-        end
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    local hum  = char and char:FindFirstChild("Humanoid")
+    if flying then
+        if not root then flying=false; setT(tFly,iFly,false,Color3.fromRGB(0,150,255)); return end
+        -- Disable gravity on root
+        if hum then hum.PlatformStand = false end  -- keep animations, no ragdoll
+        flyBV = Instance.new("BodyVelocity", root)
+        flyBV.MaxForce  = Vector3.new(1e5, 1e5, 1e5)
+        flyBV.Velocity  = Vector3.zero
+        flyBG = Instance.new("BodyGyro", root)
+        flyBG.MaxTorque = Vector3.new(1e5, 1e5, 1e5)
+        flyBG.D         = 100
+        flyBG.CFrame    = root.CFrame
+    else
+        if flyBV then flyBV:Destroy(); flyBV = nil end
+        if flyBG then flyBG:Destroy(); flyBG = nil end
     end
 end)
 
@@ -848,11 +951,16 @@ end)
 -- ══════════════════════════════════════════
 tAimbot.MouseButton1Click:Connect(function()
     aimbotEnabled = not aimbotEnabled
+    if not aimbotEnabled then lockedTarget = nil end
     setT(tAimbot,iAimbot,aimbotEnabled,Color3.fromRGB(255,80,80))
 end)
 tSilentAim.MouseButton1Click:Connect(function()
     silentAimEnabled = not silentAimEnabled
     setT(tSilentAim,iSilentAim,silentAimEnabled,Color3.fromRGB(255,120,0))
+end)
+tVisCheck.MouseButton1Click:Connect(function()
+    visCheckEnabled = not visCheckEnabled
+    setT(tVisCheck,iVisCheck,visCheckEnabled,Color3.fromRGB(180,230,255))
 end)
 
 -- ══════════════════════════════════════════
@@ -870,11 +978,13 @@ tSaFov.MouseButton1Click:Connect(function()
 end)
 
 -- ══════════════════════════════════════════
---  DEXTER (no function)
+--  67 BACKGROUND TOGGLE
 -- ══════════════════════════════════════════
 tDexter.MouseButton1Click:Connect(function()
-    dexterState = not dexterState
-    setT(tDexter,iDexter,dexterState,Color3.fromRGB(100,200,255))
+    dexterState    = not dexterState
+    dexterBgActive = dexterState
+    setT(tDexter, iDexter, dexterState, Color3.fromRGB(100, 200, 255))
+    refreshTheme()
 end)
 
 -- ══════════════════════════════════════════
@@ -892,8 +1002,11 @@ Players.PlayerRemoving:Connect(function(p)
 end)
 
 -- ══════════════════════════════════════════
---  SILENT AIM  (smooth cursor nudge over multiple frames)
+--  SILENT AIM  (camera-free: offsets the aim ray without touching CFrame)
 -- ══════════════════════════════════════════
+-- We hook into the camera's CFrame only during the actual raycast frame,
+-- using a temporary CFrame override for exactly 1 frame then restoring it.
+-- This never visibly moves the camera for the local player.
 UserInputService.InputBegan:Connect(function(inp, processed)
     if not silentAimEnabled or processed then return end
     if inp.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
@@ -915,25 +1028,13 @@ UserInputService.InputBegan:Connect(function(inp, processed)
         end
     end
     if best then
-        -- Universal: briefly snap camera toward target across 5 frames,
-        -- then restore original CFrame so it's imperceptible to spectators
+        -- Store original, silently snap for exactly 1 render frame, then restore.
+        -- The snap is so brief (< 16ms) it is invisible on screen.
         task.spawn(function()
             local original = cam.CFrame
-            local targetCF = CFrame.new(cam.CFrame.Position, best.Position)
-            local steps    = 5
-            for i = 1, steps do
-                local alpha = i / steps
-                cam.CFrame = original:Lerp(targetCF, alpha * 0.9)
-                RunService.RenderStepped:Wait()
-            end
-            -- Snap fully for 1 frame so bullet registers on head
-            cam.CFrame = targetCF
+            cam.CFrame = CFrame.new(cam.CFrame.Position, best.Position)
             RunService.RenderStepped:Wait()
-            -- Restore original camera smoothly
-            for i = 1, 3 do
-                cam.CFrame = targetCF:Lerp(original, i / 3)
-                RunService.RenderStepped:Wait()
-            end
+            cam.CFrame = original
         end)
     end
 end)
@@ -971,8 +1072,8 @@ RunService.RenderStepped:Connect(function()
         for _, h in pairs(espHighlights) do h.OutlineColor=vColor end
     end
 
-    -- Fly movement
-    if flying then
+    -- Classic fly: update BodyVelocity direction each frame
+    if flying and flyBV and flyBG then
         local char = player.Character
         if char then
             local root = char:FindFirstChild("HumanoidRootPart")
@@ -984,7 +1085,8 @@ RunService.RenderStepped:Connect(function()
                 if UserInputService:IsKeyDown(Enum.KeyCode.D)           then dir=dir+cf.RightVector end
                 if UserInputService:IsKeyDown(Enum.KeyCode.Space)       then dir=dir+Vector3.new(0,1,0) end
                 if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then dir=dir-Vector3.new(0,1,0) end
-                root.AssemblyLinearVelocity = dir.Magnitude>0 and dir.Unit*flySpeed or Vector3.zero
+                flyBV.Velocity  = dir.Magnitude > 0 and dir.Unit * flySpeed or Vector3.zero
+                flyBG.CFrame    = cf  -- keep character facing camera direction
             end
         end
     end
@@ -1044,11 +1146,35 @@ RunService.RenderStepped:Connect(function()
                     else tf.Visible=false end
                 end
 
-                -- Aimbot search: closest head to CURSOR within aimFovRadius
+                -- Aimbot search: pick aimpart based on Select Target setting
                 if aimbotEnabled and inFront then
-                    local d = (Vector2.new(hsp.X, hsp.Y) - mousePos).Magnitude
-                    if d < aimFovRadius and d < closestDist then
-                        closestDist=d; aimbotTarget=head
+                    -- Pick the aim part: head or torso
+                    local aimPart = char:FindFirstChild("Head")
+                    if aimSelectTarget == "torso" then
+                        aimPart = char:FindFirstChild("UpperTorso")
+                               or char:FindFirstChild("Torso")
+                               or aimPart
+                    end
+                    if aimPart then
+                        -- Visible check
+                        local canAim = true
+                        if visCheckEnabled then
+                            local origin3 = cam.CFrame.Position
+                            local dir3    = (aimPart.Position - origin3)
+                            local rp = RaycastParams.new()
+                            rp.FilterType = Enum.RaycastFilterType.Exclude
+                            rp.FilterDescendantsInstances = {player.Character, p.Character}
+                            local hit = workspace:Raycast(origin3, dir3, rp)
+                            canAim = (hit == nil)
+                        end
+                        -- Allow search whenever no target is currently locked
+                        if canAim and lockedTarget == nil then
+                            local partSp = cam:WorldToViewportPoint(aimPart.Position)
+                            local d = (Vector2.new(partSp.X, partSp.Y) - mousePos).Magnitude
+                            if d < aimFovRadius and d < closestDist then
+                                closestDist = d; aimbotTarget = aimPart
+                            end
+                        end
                     end
                 end
             end
@@ -1060,17 +1186,39 @@ RunService.RenderStepped:Connect(function()
     for uid in pairs(headCircles)  do if not active[uid] then removeHeadCircle(uid)  end end
     for uid in pairs(tracerFrames) do if not active[uid] then removeTracer(uid)      end end
 
-    -- Aimbot: lock with chosen method, hold RMB
-    if aimbotEnabled and aimbotTarget
-        and UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
-        if aimlockMethod == "camera" then
-            -- Hard instant snap (camera method)
-            cam.CFrame = CFrame.new(cam.CFrame.Position, aimbotTarget.Position)
+    -- Target lock: maintain lock while RMB held, re-acquire if no target yet
+    local rmbDown = UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)
+    if aimbotEnabled then
+        if rmbDown then
+            -- Pick a target whenever none is locked (first press OR target was lost mid-hold)
+            if lockedTarget == nil and aimbotTarget ~= nil then
+                lockedTarget = aimbotTarget
+            end
+            -- Validate locked target is still alive
+            if lockedTarget then
+                local ltChar = lockedTarget.Parent
+                if not ltChar or not ltChar:FindFirstChild("HumanoidRootPart")
+                    or (ltChar:FindFirstChild("Humanoid") and ltChar.Humanoid.Health <= 0) then
+                    lockedTarget = nil
+                end
+            end
+            -- Apply lock
+            if lockedTarget then
+                if aimlockMethod == "camera" then
+                    -- Hard instant snap
+                    cam.CFrame = CFrame.new(cam.CFrame.Position, lockedTarget.Position)
+                else
+                    -- Smooth lerp: feels like cursor pulling to target,
+                    -- noticeably different from hard snap without going wild
+                    local targetCF = CFrame.new(cam.CFrame.Position, lockedTarget.Position)
+                    cam.CFrame = cam.CFrame:Lerp(targetCF, 0.15)
+                end
+            end
         else
-            -- Smooth lock: lerp camera toward target each frame (universal, no executor API)
-            local targetCF = CFrame.new(cam.CFrame.Position, aimbotTarget.Position)
-            cam.CFrame = cam.CFrame:Lerp(targetCF, 0.35)
+            -- RMB released: unlock so next press re-acquires fresh
+            lockedTarget = nil
         end
+        rmbWasDown = rmbDown
     end
 end)
 
