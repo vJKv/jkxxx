@@ -1,4 +1,6 @@
-
+-- [[ JKxxx ELITE - V7.0 ]] --
+-- FOV follows cursor, SA cursor-based, Aimlock Method dropdown,
+-- Arrow on far-right, Head circles, Menu/Color/Other settings, Accent in Color
 
 local Players          = game:GetService("Players")
 local RunService       = game:GetService("RunService")
@@ -41,10 +43,17 @@ local dexterBgActive = false
 
 -- Theme base colors (used by refreshTheme + refreshGlass)
 local THEME_DATA = {
-    default = { bg = Color3.fromRGB(12,12,14),  side = Color3.fromRGB(18,18,22),  tog = Color3.fromRGB(25,25,30)  },
-    purple  = { bg = Color3.fromRGB(80,35,100), side = Color3.fromRGB(60,20,80),  tog = Color3.fromRGB(70,28,90)  },
-    night   = { bg = Color3.fromRGB(23,29,63),  side = Color3.fromRGB(15,20,50),  tog = Color3.fromRGB(22,32,68)  },
+    default = { bg = Color3.fromRGB(12,12,14),  side = Color3.fromRGB(18,18,22),  tog = Color3.fromRGB(25,25,30),  icon = Color3.fromRGB(30,30,35)  },
+    purple  = { bg = Color3.fromRGB(80,35,100), side = Color3.fromRGB(60,20,80),  tog = Color3.fromRGB(70,28,90),  icon = Color3.fromRGB(85,35,105) },
+    night   = { bg = Color3.fromRGB(23,29,63),  side = Color3.fromRGB(15,20,50),  tog = Color3.fromRGB(22,32,68),  icon = Color3.fromRGB(28,38,75)  },
 }
+
+-- Style tracking tables (declared early so mkIconBtn can use allIconBtns)
+local allToggles      = {}
+local toggleRegistry  = {}
+local sliderElements  = {}
+local allSubUnderlines = {}
+local allIconBtns     = {}  -- sidebar tab icon buttons for theme coloring
 
 local strokeColorMode  = "rgb";  local fixedStrokeColor = Color3.new(1, 1, 1)
 local visualColorMode  = "rgb";  local fixedVisualColor  = Color3.new(1, 0, 0)
@@ -58,13 +67,7 @@ local headCircles   = {}
 local tracerFrames  = {}
 
 local FOV_MIN, FOV_MAX     = 30, 500
-local tracerOriginBottom   = false  -- false = top, true = bottom
-
--- Style tracking tables
-local allToggles      = {}
-local toggleRegistry  = {}
-local sliderElements  = {}
-local allSubUnderlines = {}
+local tracerOriginBottom   = false
 
 -- ══════════════════════════════════════════
 --  COLOR / THEME PRESETS
@@ -228,6 +231,7 @@ local function mkIconBtn(icon, posY)
     b.BackgroundColor3 = Color3.fromRGB(30,30,35)
     b.TextColor3 = Color3.fromRGB(180,180,180)
     Instance.new("UICorner", b).CornerRadius = UDim.new(0,6)
+    table.insert(allIconBtns, b)
     return b
 end
 
@@ -703,6 +707,10 @@ refreshTheme = function()
     openBtn.BackgroundColor3 = td.bg
     for _, b in pairs(allToggles) do
         b.BackgroundColor3 = td.tog
+    end
+    -- Apply icon/tab button color from theme
+    for _, b in pairs(allIconBtns) do
+        b.BackgroundColor3 = td.icon
     end
 
     -- 2. Handle 67 image background
@@ -1186,37 +1194,34 @@ RunService.RenderStepped:Connect(function()
     for uid in pairs(headCircles)  do if not active[uid] then removeHeadCircle(uid)  end end
     for uid in pairs(tracerFrames) do if not active[uid] then removeTracer(uid)      end end
 
-    -- Target lock: maintain lock while RMB held, re-acquire if no target yet
+    -- Target lock: acquire ONCE on first RMB press frame, hold until released
     local rmbDown = UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)
     if aimbotEnabled then
         if rmbDown then
-            -- Pick a target whenever none is locked (first press OR target was lost mid-hold)
-            if lockedTarget == nil and aimbotTarget ~= nil then
-                lockedTarget = aimbotTarget
+            -- Only acquire on the very first frame RMB goes down
+            if not rmbWasDown then
+                lockedTarget = aimbotTarget  -- nil if nobody was in FOV — stays nil all hold
             end
-            -- Validate locked target is still alive
+            -- Validate: if target died or despawned, clear and do NOT re-acquire mid-hold
             if lockedTarget then
                 local ltChar = lockedTarget.Parent
                 if not ltChar or not ltChar:FindFirstChild("HumanoidRootPart")
                     or (ltChar:FindFirstChild("Humanoid") and ltChar.Humanoid.Health <= 0) then
                     lockedTarget = nil
+                    -- lockedTarget stays nil for the rest of this hold — no camera snap
                 end
             end
-            -- Apply lock
+            -- Apply lock only if target is still valid
             if lockedTarget then
                 if aimlockMethod == "camera" then
-                    -- Hard instant snap
                     cam.CFrame = CFrame.new(cam.CFrame.Position, lockedTarget.Position)
                 else
-                    -- Smooth lerp: feels like cursor pulling to target,
-                    -- noticeably different from hard snap without going wild
                     local targetCF = CFrame.new(cam.CFrame.Position, lockedTarget.Position)
                     cam.CFrame = cam.CFrame:Lerp(targetCF, 0.15)
                 end
             end
         else
-            -- RMB released: unlock so next press re-acquires fresh
-            lockedTarget = nil
+            lockedTarget = nil  -- RMB released: clear for next press
         end
         rmbWasDown = rmbDown
     end
