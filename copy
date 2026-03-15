@@ -708,9 +708,9 @@ refreshTheme = function()
     for _, b in pairs(allToggles) do
         b.BackgroundColor3 = td.tog
     end
-    -- Apply icon/tab button color from theme
-    for _, b in pairs(allIconBtns) do
-        b.BackgroundColor3 = td.icon
+    -- Apply icon/tab button color from theme (inactive = theme color, active = ATAB)
+    for _, t in ipairs(tabs) do
+        t.btn.BackgroundColor3 = t.page.Visible and ATAB or td.icon
     end
 
     -- 2. Handle 67 image background
@@ -743,7 +743,6 @@ end
 -- ══════════════════════════════════════════
 --  MAIN NAVIGATION
 -- ══════════════════════════════════════════
-local ITAB = Color3.fromRGB(30,30,35)
 local ATAB = Color3.fromRGB(50,50,70)
 local tabs = {
     {page=pgMisc,    label="MISC",     btn=btnMisc},
@@ -752,9 +751,10 @@ local tabs = {
     {page=pgSett,    label="SETTINGS", btn=btnSett},
 }
 local function openTab(t)
+    local td = THEME_DATA[currentTheme] or THEME_DATA.default
     for _, v in ipairs(tabs) do
-        v.page.Visible = (v==t)
-        v.btn.BackgroundColor3 = (v==t) and ATAB or ITAB
+        v.page.Visible         = (v==t)
+        v.btn.BackgroundColor3 = (v==t) and ATAB or td.icon
     end
     titleLbl.Text = t.label
 end
@@ -1194,24 +1194,29 @@ RunService.RenderStepped:Connect(function()
     for uid in pairs(headCircles)  do if not active[uid] then removeHeadCircle(uid)  end end
     for uid in pairs(tracerFrames) do if not active[uid] then removeTracer(uid)      end end
 
-    -- Target lock: acquire ONCE on first RMB press frame, hold until released
+    -- Target lock: acquire on first RMB press; re-acquire only if current target dies
     local rmbDown = UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)
     if aimbotEnabled then
         if rmbDown then
-            -- Only acquire on the very first frame RMB goes down
-            if not rmbWasDown then
-                lockedTarget = aimbotTarget  -- nil if nobody was in FOV — stays nil all hold
-            end
-            -- Validate: if target died or despawned, clear and do NOT re-acquire mid-hold
+            -- Validate current locked target every frame (health + existence check)
             if lockedTarget then
                 local ltChar = lockedTarget.Parent
-                if not ltChar or not ltChar:FindFirstChild("HumanoidRootPart")
-                    or (ltChar:FindFirstChild("Humanoid") and ltChar.Humanoid.Health <= 0) then
+                local ltHum  = ltChar and ltChar:FindFirstChildOfClass("Humanoid")
+                local isDead = not ltChar
+                           or not ltChar:FindFirstChild("HumanoidRootPart")
+                           or (ltHum and ltHum.Health <= 0)
+                if isDead then
                     lockedTarget = nil
-                    -- lockedTarget stays nil for the rest of this hold — no camera snap
+                    -- Do NOT re-acquire this frame — prevents snap to ground on death
                 end
             end
-            -- Apply lock only if target is still valid
+
+            -- Acquire only on first press frame if no valid target locked
+            if not rmbWasDown and lockedTarget == nil then
+                lockedTarget = aimbotTarget
+            end
+
+            -- Apply lock only if target is alive and valid
             if lockedTarget then
                 if aimlockMethod == "camera" then
                     cam.CFrame = CFrame.new(cam.CFrame.Position, lockedTarget.Position)
