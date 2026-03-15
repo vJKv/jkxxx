@@ -1,4 +1,6 @@
-
+-- [[ JKxxx ELITE - V7.0 ]] --
+-- FOV follows cursor, SA cursor-based, Aimlock Method dropdown,
+-- Arrow on far-right, Head circles, Menu/Color/Other settings, Accent in Color
 
 local Players          = game:GetService("Players")
 local RunService       = game:GetService("RunService")
@@ -24,7 +26,14 @@ local tracersEnabled                   = false
 local aimbotEnabled, silentAimEnabled  = false, false
 local aimFovEnabled,  saFovEnabled     = false, false
 local visCheckEnabled                  = false
+local hitboxEnabled                    = false
+local hitboxSize                       = 8
+local hitboxColorMode                  = "rgb"
+local fixedHitboxColor                 = Color3.fromRGB(255, 80, 180)
+local hitboxFrames                     = {}  -- [userId] = {frame, stroke}
 local dexterState                      = false
+local bartState                        = false
+local emoState                         = false
 local aimlockMethod                    = "camera"
 
 local lockedTarget   = nil  -- target lock: persist target while RMB held
@@ -122,6 +131,7 @@ sg.Name           = "JKxxx_V7"
 sg.ResetOnSpawn   = false
 sg.IgnoreGuiInset = true
 sg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+sg.DisplayOrder   = 999
 sg.Parent         = playerGui
 
 -- Canvas (non-interactive, behind menu)
@@ -172,7 +182,7 @@ Instance.new("UICorner", main).CornerRadius = UDim.new(0, 8)
 local stroke = Instance.new("UIStroke", main)
 stroke.Thickness = 1.5
 
--- 67 background image — sits behind all content inside main
+-- 67 background image
 local dexterBg = Instance.new("ImageLabel", main)
 dexterBg.Size               = UDim2.new(1, 0, 1, 0)
 dexterBg.Image              = "rbxassetid://126914773094023"
@@ -182,6 +192,28 @@ dexterBg.ScaleType          = Enum.ScaleType.Crop
 dexterBg.ZIndex             = 1
 dexterBg.Visible            = false
 Instance.new("UICorner", dexterBg).CornerRadius = UDim.new(0, 8)
+
+-- Bart background image
+local bartBg = Instance.new("ImageLabel", main)
+bartBg.Size               = UDim2.new(1, 0, 1, 0)
+bartBg.Image              = "rbxassetid://84144814550528"
+bartBg.ImageTransparency  = 0.45
+bartBg.BackgroundTransparency = 1
+bartBg.ScaleType          = Enum.ScaleType.Crop
+bartBg.ZIndex             = 1
+bartBg.Visible            = false
+Instance.new("UICorner", bartBg).CornerRadius = UDim.new(0, 8)
+
+-- Emo sadboy background image
+local emoBg = Instance.new("ImageLabel", main)
+emoBg.Size               = UDim2.new(1, 0, 1, 0)
+emoBg.Image              = "rbxassetid://10341849875"
+emoBg.ImageTransparency  = 0.45
+emoBg.BackgroundTransparency = 1
+emoBg.ScaleType          = Enum.ScaleType.Crop
+emoBg.ZIndex             = 1
+emoBg.Visible            = false
+Instance.new("UICorner", emoBg).CornerRadius = UDim.new(0, 8)
 
 local minBtn = Instance.new("TextButton", main)
 minBtn.Size               = UDim2.new(0, 30, 0, 30)
@@ -588,12 +620,14 @@ end)
 -- ══════════════════════════════════════════
 --  COMBAT PAGE  (Aim | Fov)
 -- ══════════════════════════════════════════
-local combatNav          = mkSubNav(pgCombat)
-local btnCbA, ulCbA     = mkSubBtn("Aim", combatNav,  0, 34)
-local btnCbF, ulCbF     = mkSubBtn("Fov", combatNav, 38, 34)
+local combatNav              = mkSubNav(pgCombat)
+local btnCbA, ulCbA         = mkSubBtn("Aim",    combatNav,  0, 34)
+local btnCbF, ulCbF         = mkSubBtn("Fov",    combatNav, 38, 34)
+local btnCbH, ulCbH         = mkSubBtn("Hitbox", combatNav, 76, 52)
 
 local cAim = mkSubCont(pgCombat); cAim.Visible = true
 local cFov = mkSubCont(pgCombat)
+local cHbx = mkSubCont(pgCombat)
 
 local tAimbot,    iAimbot    = mkToggle("Aimlock  [Hold RMB]", cAim, 1)
 local tSilentAim, iSilentAim = mkToggle("Silent Aim",          cAim, 2)
@@ -636,14 +670,30 @@ local _, dropFovStroke = mkDropdown(cFov, 6, COLOR_PRESETS, function(p)
     end
 end)
 
+local tHitbox, iHitbox = mkToggle("Hitbox Expander", cHbx, 1)
+mkSlider(cHbx, 2, "Hitbox size", 2, 30, hitboxSize, function(v) hitboxSize = v end)
+
+mkLabel("Hitbox color", cHbx, 3)
+mkDropdown(cHbx, 4, COLOR_PRESETS, function(p)
+    hitboxColorMode = p.mode
+    if p.mode == "fixed" then
+        fixedHitboxColor = p.color
+        for _, bd in pairs(hitboxFrames) do bd[2].Color = p.color end
+    end
+end)
+
 task.defer(function() subOn(btnCbA, ulCbA) end)
 btnCbA.MouseButton1Click:Connect(function()
-    subOn(btnCbA,ulCbA); subOff(btnCbF,ulCbF)
-    cAim.Visible=true; cFov.Visible=false
+    subOn(btnCbA,ulCbA); subOff(btnCbF,ulCbF); subOff(btnCbH,ulCbH)
+    cAim.Visible=true; cFov.Visible=false; cHbx.Visible=false
 end)
 btnCbF.MouseButton1Click:Connect(function()
-    subOff(btnCbA,ulCbA); subOn(btnCbF,ulCbF)
-    cFov.Visible=true; cAim.Visible=false
+    subOff(btnCbA,ulCbA); subOn(btnCbF,ulCbF); subOff(btnCbH,ulCbH)
+    cFov.Visible=true; cAim.Visible=false; cHbx.Visible=false
+end)
+btnCbH.MouseButton1Click:Connect(function()
+    subOff(btnCbA,ulCbA); subOff(btnCbF,ulCbF); subOn(btnCbH,ulCbH)
+    cHbx.Visible=true; cAim.Visible=false; cFov.Visible=false
 end)
 
 -- ══════════════════════════════════════════
@@ -692,7 +742,9 @@ mkDropdown(cStCol, 4, ACCENT_PRESETS, function(p)
 end)
 
 -- Other sub-tab content
-local tDexter, iDexter = mkToggle("67", cOther, 1)
+local tDexter, iDexter = mkToggle("67",          cOther, 1)
+local tBart,   iBart   = mkToggle("Bart",         cOther, 2)
+local tEmo,    iEmo    = mkToggle("Emo sadboy",   cOther, 3)
 
 mkLabel("Minimize position", cOther, 2)
 mkDropdown(cOther, 3, MINPOS_PRESETS, function(p)
@@ -735,40 +787,37 @@ end)
 refreshTheme = function()
     local td      = THEME_DATA[currentTheme] or THEME_DATA.default
     local isGlass = glassMode
-    local is67    = dexterBgActive
+    local anyBg   = dexterBgActive or bartState or emoState
 
     -- 1. Always apply theme colors
     main.BackgroundColor3    = td.bg
     sideBar.BackgroundColor3 = td.side
     openBtn.BackgroundColor3 = td.bg
-    for _, b in pairs(allToggles) do
-        b.BackgroundColor3 = td.tog
-    end
-    -- Apply icon/tab button color from theme (inactive = theme color, active = ATAB)
+    for _, b in pairs(allToggles) do b.BackgroundColor3 = td.tog end
     for _, t in ipairs(tabs) do
         t.btn.BackgroundColor3 = t.page.Visible and ATAB or td.icon
     end
 
-    -- 2. Handle 67 image background
-    --    When 67 is active: main frame bg becomes invisible, dexterBg image IS the background.
-    --    Sidebar and toggles stay solid (they have their own bg) so they appear above the image.
-    dexterBg.Visible = is67
-    if is67 then
-        main.BackgroundTransparency = 1          -- hide frame bg, show image instead
-        dexterBg.ImageTransparency  = isGlass and 0.65 or 0.4
-    else
-        main.BackgroundTransparency = isGlass and 0.3 or 0
-    end
+    -- 2. Background images — only one visible at a time
+    dexterBg.Visible = dexterBgActive
+    bartBg.Visible   = bartState
+    emoBg.Visible    = emoState
 
-    -- 3. Sidebar transparency
-    sideBar.BackgroundTransparency = isGlass and 0.45 or (is67 and 0.15 or 0)
+    local imgTransp = isGlass and 0.65 or 0.4
+    if dexterBgActive then dexterBg.ImageTransparency = imgTransp end
+    if bartState       then bartBg.ImageTransparency   = imgTransp end
+    if emoState        then emoBg.ImageTransparency    = imgTransp end
 
-    -- 4. Open button transparency
-    openBtn.BackgroundTransparency = is67 and 0 or (isGlass and 0.3 or 0)
+    -- 3. Main frame bg: hide when any custom bg active (image IS the background)
+    main.BackgroundTransparency = anyBg and 1 or (isGlass and 0.3 or 0)
 
-    -- 5. Toggles transparency  
+    -- 4. Sidebar + buttons transparency
+    sideBar.BackgroundTransparency = isGlass and 0.45 or (anyBg and 0.15 or 0)
+    openBtn.BackgroundTransparency = isGlass and 0.3 or 0
+
+    -- 5. Toggles transparency
     for _, b in pairs(allToggles) do
-        b.BackgroundTransparency = isGlass and 0.55 or (is67 and 0.35 or 0)
+        b.BackgroundTransparency = isGlass and 0.55 or (anyBg and 0.35 or 0)
     end
 end
 
@@ -1006,6 +1055,25 @@ tVisCheck.MouseButton1Click:Connect(function()
     visCheckEnabled = not visCheckEnabled
     setT(tVisCheck,iVisCheck,visCheckEnabled,Color3.fromRGB(180,230,255))
 end)
+tHitbox.MouseButton1Click:Connect(function()
+    hitboxEnabled = not hitboxEnabled
+    setT(tHitbox,iHitbox,hitboxEnabled,Color3.fromRGB(255,80,180))
+    if not hitboxEnabled then
+        -- Restore all hitboxes and destroy visual frames
+        for uid, bd in pairs(hitboxFrames) do
+            bd[1]:Destroy(); hitboxFrames[uid] = nil
+        end
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p ~= player and p.Character then
+                local root = p.Character:FindFirstChild("HumanoidRootPart")
+                if root and root:GetAttribute("OrigSize") then
+                    local orig = root:GetAttribute("OrigSize")
+                    root.Size = Vector3.new(orig, orig, orig)
+                end
+            end
+        end
+    end
+end)
 
 -- ══════════════════════════════════════════
 --  FOV TOGGLES
@@ -1066,9 +1134,37 @@ end
 tDexter.MouseButton1Click:Connect(function()
     dexterState    = not dexterState
     dexterBgActive = dexterState
+    -- Deactivate other backgrounds if this one turns on
+    if dexterState then
+        bartState = false; emoState = false
+        setT(tBart, iBart, false, Color3.fromRGB(255, 200, 50))
+        setT(tEmo,  iEmo,  false, Color3.fromRGB(150, 80, 255))
+    end
     setT(tDexter, iDexter, dexterState, Color3.fromRGB(100, 200, 255))
     refreshTheme()
     if dexterState then showPopup() end
+end)
+
+tBart.MouseButton1Click:Connect(function()
+    bartState = not bartState
+    if bartState then
+        dexterState = false; dexterBgActive = false; emoState = false
+        setT(tDexter, iDexter, false, Color3.fromRGB(100, 200, 255))
+        setT(tEmo,    iEmo,    false, Color3.fromRGB(150, 80, 255))
+    end
+    setT(tBart, iBart, bartState, Color3.fromRGB(255, 200, 50))
+    refreshTheme()
+end)
+
+tEmo.MouseButton1Click:Connect(function()
+    emoState = not emoState
+    if emoState then
+        dexterState = false; dexterBgActive = false; bartState = false
+        setT(tDexter, iDexter, false, Color3.fromRGB(100, 200, 255))
+        setT(tBart,   iBart,   false, Color3.fromRGB(255, 200, 50))
+    end
+    setT(tEmo, iEmo, emoState, Color3.fromRGB(150, 80, 255))
+    refreshTheme()
 end)
 
 -- ══════════════════════════════════════════
@@ -1193,7 +1289,51 @@ RunService.RenderStepped:Connect(function()
 
                 active[p.UserId] = true
 
-                -- 2D Box
+                -- Hitbox expander: resize HumanoidRootPart locally each frame
+                if hitboxEnabled then
+                    local hroot = char:FindFirstChild("HumanoidRootPart")
+                    if hroot then
+                        -- Save original size once
+                        if not hroot:GetAttribute("OrigSize") then
+                            hroot:SetAttribute("OrigSize", hroot.Size.X)
+                        end
+                        hroot.Size = Vector3.new(hitboxSize, hitboxSize, hitboxSize)
+
+                        -- Visual: project the hitbox corners to get screen size
+                        local rootSp = cam:WorldToViewportPoint(hroot.Position)
+                        local edgeSp = cam:WorldToViewportPoint(
+                            hroot.Position + Vector3.new(hitboxSize * 0.5, 0, 0))
+                        local hbColor = hitboxColorMode == "rgb" and vColor or fixedHitboxColor
+
+                        -- Get or create hitbox visual frame
+                        if not hitboxFrames[p.UserId] then
+                            local f = Instance.new("Frame", canvas)
+                            f.AnchorPoint = Vector2.new(0.5, 0.5)
+                            f.BackgroundTransparency = 0.75
+                            f.BorderSizePixel = 0
+                            f.Visible = false
+                            local st = Instance.new("UIStroke", f)
+                            st.Thickness = 1.5
+                            hitboxFrames[p.UserId] = {f, st}
+                        end
+
+                        local hbf, hbs = hitboxFrames[p.UserId][1], hitboxFrames[p.UserId][2]
+                        if inFront and rootSp.Z > 0 then
+                            local halfPx = math.max(6, math.abs(rootSp.X - edgeSp.X))
+                            local px2    = halfPx * 2
+                            hbf.Position           = UDim2.new(0, rootSp.X, 0, rootSp.Y)
+                            hbf.Size               = UDim2.new(0, px2, 0, px2)
+                            hbf.BackgroundColor3   = hbColor
+                            hbs.Color              = hbColor
+                            hbf.Visible            = true
+                        else
+                            hbf.Visible = false
+                        end
+                    end
+                elseif hitboxFrames[p.UserId] then
+                    -- Hitbox disabled mid-frame: hide leftover frame
+                    hitboxFrames[p.UserId][1].Visible = false
+                end
                 if boxesEnabled then
                     local bf, bs = getOrCreateBox(p.UserId)
                     if inFront then
@@ -1269,6 +1409,9 @@ RunService.RenderStepped:Connect(function()
     for uid in pairs(boxFrames)    do if not active[uid] then removeBox(uid)         end end
     for uid in pairs(headCircles)  do if not active[uid] then removeHeadCircle(uid)  end end
     for uid in pairs(tracerFrames) do if not active[uid] then removeTracer(uid)      end end
+    for uid, bd in pairs(hitboxFrames) do
+        if not active[uid] then bd[1]:Destroy(); hitboxFrames[uid] = nil end
+    end
 
     -- Target lock: acquire on first RMB press; re-acquire only if current target dies
     local rmbDown = UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)
@@ -1300,8 +1443,17 @@ RunService.RenderStepped:Connect(function()
                     if aimlockMethod == "camera" then
                         cam.CFrame = CFrame.new(cam.CFrame.Position, lockedTarget.Position)
                     else
-                        local targetCF = CFrame.new(cam.CFrame.Position, lockedTarget.Position)
-                        cam.CFrame = cam.CFrame:Lerp(targetCF, 0.45)
+                        -- Cursor method:
+                        -- 1. Project target to screen with WorldToViewportPoint
+                        -- 2. Get current cursor position via UserInputService
+                        -- 3. Calculate pixel delta between cursor and target
+                        -- 4. Move cursor by that delta with mousemoverel (relative movement)
+                        local screenTarget = Vector2.new(partSp.X, partSp.Y)
+                        local screenCursor = UserInputService:GetMouseLocation()
+                        local dx = screenTarget.X - screenCursor.X
+                        local dy = screenTarget.Y - screenCursor.Y
+                        -- Apply 45% of remaining delta — smooth but fast enough to track
+                        pcall(mousemoverel, dx * 0.45, dy * 0.45)
                     end
                 end
             end
