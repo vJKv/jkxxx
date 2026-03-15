@@ -258,8 +258,17 @@ local function mkPage()
     local p = Instance.new("ScrollingFrame", cArea)
     p.Size = UDim2.new(1,0,1,-35); p.Position = UDim2.new(0,0,0,35)
     p.BackgroundTransparency = 1; p.Visible = false; p.ScrollBarThickness = 0
+    p.ScrollingEnabled = true
     local l = Instance.new("UIListLayout", p)
     l.Padding = UDim.new(0,6); l.SortOrder = Enum.SortOrder.LayoutOrder
+    -- Slow scroll: intercept MouseWheel and move by a fixed small step
+    p.InputChanged:Connect(function(inp)
+        if inp.UserInputType == Enum.UserInputType.MouseWheel then
+            local step = 22
+            local cur  = p.CanvasPosition.Y
+            p.CanvasPosition = Vector2.new(0, cur - inp.Position.Z * step)
+        end
+    end)
     return p
 end
 
@@ -498,8 +507,16 @@ local function mkSubCont(page)
     local c = Instance.new("ScrollingFrame", page)
     c.Size = UDim2.new(1,0,1,-32); c.Position = UDim2.new(0,0,0,32)
     c.BackgroundTransparency = 1; c.ScrollBarThickness = 0; c.Visible = false
+    c.ScrollingEnabled = true
     local l = Instance.new("UIListLayout", c)
     l.Padding = UDim.new(0,6); l.SortOrder = Enum.SortOrder.LayoutOrder
+    c.InputChanged:Connect(function(inp)
+        if inp.UserInputType == Enum.UserInputType.MouseWheel then
+            local step = 22
+            local cur  = c.CanvasPosition.Y
+            c.CanvasPosition = Vector2.new(0, cur - inp.Position.Z * step)
+        end
+    end)
     return c
 end
 
@@ -640,9 +657,9 @@ local tOutline, iOutline = mkToggle("Menu Outline", cMenu, 2)
 iOutline.BackgroundColor3 = Color3.fromRGB(0,255,150)
 
 mkLabel("Themes", cMenu, 3)
--- Forward declaration so the dropdown callback can reference it
--- (the full definition is in the THEME + GLASS REFRESH section below)
+-- Forward declarations needed by refreshTheme
 local refreshTheme
+local tabs  -- defined in MAIN NAVIGATION, used in refreshTheme
 
 mkDropdown(cMenu, 4, THEMES_PRESETS, function(p)
     currentTheme = p.label:lower()
@@ -744,7 +761,7 @@ end
 --  MAIN NAVIGATION
 -- ══════════════════════════════════════════
 local ATAB = Color3.fromRGB(50,50,70)
-local tabs = {
+tabs = {
     {page=pgMisc,    label="MISC",     btn=btnMisc},
     {page=pgVisuals, label="VISUALS",  btn=btnVis},
     {page=pgCombat,  label="COMBAT",   btn=btnCombat},
@@ -1216,13 +1233,17 @@ RunService.RenderStepped:Connect(function()
                 lockedTarget = aimbotTarget
             end
 
-            -- Apply lock only if target is alive and valid
+            -- Apply lock only if target is alive AND currently on screen
             if lockedTarget then
-                if aimlockMethod == "camera" then
-                    cam.CFrame = CFrame.new(cam.CFrame.Position, lockedTarget.Position)
-                else
-                    local targetCF = CFrame.new(cam.CFrame.Position, lockedTarget.Position)
-                    cam.CFrame = cam.CFrame:Lerp(targetCF, 0.15)
+                local partSp, partOk = cam:WorldToViewportPoint(lockedTarget.Position)
+                local onScreen = partOk and partSp.Z > 0
+                if onScreen then
+                    if aimlockMethod == "camera" then
+                        cam.CFrame = CFrame.new(cam.CFrame.Position, lockedTarget.Position)
+                    else
+                        local targetCF = CFrame.new(cam.CFrame.Position, lockedTarget.Position)
+                        cam.CFrame = cam.CFrame:Lerp(targetCF, 0.45)
+                    end
                 end
             end
         else
