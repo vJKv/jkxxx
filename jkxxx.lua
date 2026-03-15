@@ -1,6 +1,3 @@
--- [[ JKxxx ELITE - V7.0 ]] --
--- FOV follows cursor, SA cursor-based, Aimlock Method dropdown,
--- Arrow on far-right, Head circles, Menu/Color/Other settings, Accent in Color
 
 local Players          = game:GetService("Players")
 local RunService       = game:GetService("RunService")
@@ -8,9 +5,7 @@ local TweenService     = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local player           = Players.LocalPlayer
 
--- ══════════════════════════════════════════
 --  STATE
--- ══════════════════════════════════════════
 local flying, noclip, walkSpeedEnabled = false, false, false
 local clickTpEnabled                   = false
 local highlightEnabled, boxesEnabled   = false, false
@@ -32,24 +27,23 @@ local visualColorMode  = "rgb";  local fixedVisualColor  = Color3.new(1, 0, 0)
 local fovColorMode     = "rgb";  local fixedFovColor     = Color3.new(1, 1, 1)
 local accentColor      = nil  -- nil = per-toggle default
 
--- Per-player tables
+
 local espHighlights = {}
 local boxFrames     = {}
 local headCircles   = {}
 local tracerFrames  = {}
 
 local FOV_MIN, FOV_MAX     = 30, 500
-local tracerOriginBottom   = false  -- false = top, true = bottom
+local tracerOriginBottom   = false  
 
--- Style tracking tables
+
 local allToggles      = {}
 local toggleRegistry  = {}
 local sliderElements  = {}
 local allSubUnderlines = {}
 
--- ══════════════════════════════════════════
+
 --  COLOR / THEME PRESETS
--- ══════════════════════════════════════════
 local COLOR_PRESETS = {
     {label="RGB (animated)", mode="rgb",   color=nil},
     {label="Blue",           mode="fixed", color=Color3.fromRGB(30,  120, 255)},
@@ -84,9 +78,8 @@ local THEMES_PRESETS = {
     {label="Light"},
 }
 
--- ══════════════════════════════════════════
+
 --  GUI ROOT
--- ══════════════════════════════════════════
 local sg = Instance.new("ScreenGui")
 sg.Name           = "JKxxx_V7"
 sg.ResetOnSpawn   = false
@@ -94,7 +87,7 @@ sg.IgnoreGuiInset = true
 sg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 sg.Parent         = player:WaitForChild("PlayerGui")
 
--- Canvas (non-interactive, behind menu)
+
 local canvas = Instance.new("Frame", sg)
 canvas.Size                   = UDim2.new(1, 0, 1, 0)
 canvas.BackgroundTransparency = 1
@@ -102,7 +95,7 @@ canvas.BorderSizePixel        = 0
 canvas.ZIndex                 = 1
 canvas.Active                 = false
 
--- Aimlock FOV circle (follows cursor)
+
 local aimFovCircle = Instance.new("Frame", sg)
 aimFovCircle.AnchorPoint            = Vector2.new(0.5, 0.5)
 aimFovCircle.Size                   = UDim2.new(0, aimFovRadius*2, 0, aimFovRadius*2)
@@ -115,7 +108,7 @@ Instance.new("UICorner", aimFovCircle).CornerRadius = UDim.new(1, 0)
 local aimFovStroke = Instance.new("UIStroke", aimFovCircle)
 aimFovStroke.Thickness = 1.4
 
--- Silent Aim FOV circle (follows cursor)
+
 local saFovCircle = Instance.new("Frame", sg)
 saFovCircle.AnchorPoint            = Vector2.new(0.5, 0.5)
 saFovCircle.Size                   = UDim2.new(0, saFovRadius*2, 0, saFovRadius*2)
@@ -168,9 +161,8 @@ openStroke.Thickness = 1.2
 minBtn.MouseButton1Click:Connect(function()  main.Visible=false; openBtn.Visible=true  end)
 openBtn.MouseButton1Click:Connect(function() main.Visible=true;  openBtn.Visible=false end)
 
--- ══════════════════════════════════════════
+
 --  SIDEBAR
--- ══════════════════════════════════════════
 local sideBar = Instance.new("Frame", main)
 sideBar.Size             = UDim2.new(0, 45, 1, 0)
 sideBar.BackgroundColor3 = Color3.fromRGB(18, 18, 22)
@@ -200,9 +192,8 @@ local btnVis    = mkIconBtn("👁",  95)
 local btnCombat = mkIconBtn("⚔️", 135)
 local btnSett   = mkIconBtn("⚙️", 175)
 
--- ══════════════════════════════════════════
+
 --  CONTENT AREA + PAGES
--- ══════════════════════════════════════════
 local cArea = Instance.new("Frame", main)
 cArea.Size = UDim2.new(1,-55,1,-10); cArea.Position = UDim2.new(0,50,0,5)
 cArea.BackgroundTransparency = 1
@@ -234,9 +225,8 @@ local pgVisuals = mkSubPage()
 local pgCombat  = mkSubPage()
 local pgSett    = mkSubPage()
 
--- ══════════════════════════════════════════
+
 --  ACCENT + TOGGLE HELPERS
--- ══════════════════════════════════════════
 local OFF_IND = Color3.fromRGB(40,40,45)
 local OFF_TXT = Color3.fromRGB(180,180,180)
 
@@ -263,9 +253,8 @@ local function applyAccent(newColor)
     end
 end
 
--- ══════════════════════════════════════════
+
 --  COMPONENT FACTORIES
--- ══════════════════════════════════════════
 local function mkToggle(name, parent, order)
     local b = Instance.new("TextButton", parent)
     b.Size = UDim2.new(0.95,0,0,28); b.BackgroundColor3 = Color3.fromRGB(25,25,30)
@@ -339,10 +328,7 @@ local function mkLabel(text, parent, order)
     return l
 end
 
--- ══════════════════════════════════════════
---  DROPDOWN FACTORY
---  Arrow label pinned to far right of button
--- ══════════════════════════════════════════
+
 local function mkDropdown(parent, order, presets, onSelect)
     local btn = Instance.new("TextButton", parent)
     btn.Size = UDim2.new(0.95,0,0,26); btn.BackgroundColor3 = Color3.fromRGB(25,25,32)
@@ -353,7 +339,7 @@ local function mkDropdown(parent, order, presets, onSelect)
     btn.LayoutOrder = order; btn.ClipsDescendants = true
     Instance.new("UICorner", btn).CornerRadius = UDim.new(0,4)
 
-    -- Arrow label — far right, always same position regardless of text
+
     local arrow = Instance.new("TextLabel", btn)
     arrow.Size = UDim2.new(0,20,1,0); arrow.Position = UDim2.new(1,-22,0,0)
     arrow.BackgroundTransparency = 1; arrow.Text = "v"
@@ -361,7 +347,7 @@ local function mkDropdown(parent, order, presets, onSelect)
     arrow.TextColor3 = Color3.fromRGB(130,130,145)
     arrow.TextXAlignment = Enum.TextXAlignment.Center
 
-    -- Floating list parented to sg
+
     local list = Instance.new("Frame", sg)
     list.Size = UDim2.new(0,185,0,#presets*25+6)
     list.BackgroundColor3 = Color3.fromRGB(20,20,26)
@@ -413,9 +399,8 @@ local function mkDropdown(parent, order, presets, onSelect)
     return btn, listStroke
 end
 
--- ══════════════════════════════════════════
+
 --  SUB-TAB SYSTEM
--- ══════════════════════════════════════════
 local SUB_ON  = Color3.new(1,1,1)
 local SUB_OFF = Color3.fromRGB(85,85,95)
 local TW_IN   = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
@@ -462,9 +447,9 @@ local function mkSubCont(page)
     return c
 end
 
--- ══════════════════════════════════════════
+
 --  MISC PAGE
--- ══════════════════════════════════════════
+
 local tSpeed,   iSpeed   = mkToggle("WalkSpeed",  pgMisc, 1)
 mkSlider(pgMisc, 2, "Speed",     16, 1000, 16, function(v) walkSpeedValue=v end)
 local tFly,     iFly     = mkToggle("Fly Mode",   pgMisc, 3)
@@ -472,9 +457,9 @@ mkSlider(pgMisc, 4, "Fly Speed", 10, 1000, 50, function(v) flySpeed=v end)
 local tNoclip,  iNoclip  = mkToggle("Noclip",     pgMisc, 5)
 local tClickTp, iClickTp = mkToggle("Click TP",   pgMisc, 6)
 
--- ══════════════════════════════════════════
+
 --  VISUALS PAGE  (ESP | Tracers | Color)
--- ══════════════════════════════════════════
+
 local visNav              = mkSubNav(pgVisuals)
 local btnVsE, ulVsE      = mkSubBtn("ESP",     visNav,   0, 42)
 local btnVsT, ulVsT      = mkSubBtn("Tracers", visNav,  46, 58)
@@ -519,9 +504,9 @@ btnVsC.MouseButton1Click:Connect(function()
     cEsp.Visible=false; cTrc.Visible=false; cVCol.Visible=true
 end)
 
--- ══════════════════════════════════════════
+
 --  COMBAT PAGE  (Aim | Fov)
--- ══════════════════════════════════════════
+
 local combatNav          = mkSubNav(pgCombat)
 local btnCbA, ulCbA     = mkSubBtn("Aim", combatNav,  0, 34)
 local btnCbF, ulCbF     = mkSubBtn("Fov", combatNav, 38, 34)
@@ -573,10 +558,9 @@ btnCbF.MouseButton1Click:Connect(function()
     cFov.Visible=true; cAim.Visible=false
 end)
 
--- ══════════════════════════════════════════
+
 --  SETTINGS PAGE  (Menu | Color | Other)
---  ALL containers declared BEFORE callbacks
--- ══════════════════════════════════════════
+
 local settNav            = mkSubNav(pgSett)
 local btnStM, ulStM     = mkSubBtn("Menu",  settNav,  0, 42)
 local btnStC, ulStC     = mkSubBtn("Color", settNav, 46, 44)
@@ -586,15 +570,15 @@ local cMenu  = mkSubCont(pgSett); cMenu.Visible = true
 local cStCol = mkSubCont(pgSett)
 local cOther = mkSubCont(pgSett)
 
--- Menu sub-tab content
+
 local tGlass,   iGlass   = mkToggle("Glass Mode",  cMenu, 1)
 local tOutline, iOutline = mkToggle("Menu Outline", cMenu, 2)
 iOutline.BackgroundColor3 = Color3.fromRGB(0,255,150)
 
 mkLabel("Themes", cMenu, 3)
-mkDropdown(cMenu, 4, THEMES_PRESETS, function(_) end) -- no function yet
+mkDropdown(cMenu, 4, THEMES_PRESETS, function(_) end) 
 
--- Color sub-tab content (border color + accent)
+
 mkLabel("Menu border color", cStCol, 1)
 local _, dropStrkStroke = mkDropdown(cStCol, 2, COLOR_PRESETS, function(p)
     strokeColorMode = p.mode
@@ -609,10 +593,10 @@ mkDropdown(cStCol, 4, ACCENT_PRESETS, function(p)
     if p.mode == "default" then applyAccent(nil) else applyAccent(p.color) end
 end)
 
--- Other sub-tab content
+
 local tDexter, iDexter = mkToggle("67", cOther, 1)
 
--- Settings navigation callbacks (declared AFTER all containers)
+
 task.defer(function() subOn(btnStM, ulStM) end)
 btnStM.MouseButton1Click:Connect(function()
     subOn(btnStM,ulStM); subOff(btnStC,ulStC); subOff(btnStO,ulStO)
@@ -627,9 +611,9 @@ btnStO.MouseButton1Click:Connect(function()
     cMenu.Visible=false; cStCol.Visible=false; cOther.Visible=true
 end)
 
--- ══════════════════════════════════════════
+
 --  GLASS MODE
--- ══════════════════════════════════════════
+
 local function refreshGlass()
     main.BackgroundTransparency    = glassMode and 0.25 or 0
     sideBar.BackgroundTransparency = glassMode and 0.40 or 0
@@ -640,9 +624,9 @@ local function refreshGlass()
     end
 end
 
--- ══════════════════════════════════════════
+
 --  MAIN NAVIGATION
--- ══════════════════════════════════════════
+
 local ITAB = Color3.fromRGB(30,30,35)
 local ATAB = Color3.fromRGB(50,50,70)
 local tabs = {
@@ -661,9 +645,9 @@ end
 for _, t in ipairs(tabs) do t.btn.MouseButton1Click:Connect(function() openTab(t) end) end
 openTab(tabs[1])
 
--- ══════════════════════════════════════════
+
 --  SETTINGS LOGIC
--- ══════════════════════════════════════════
+
 tGlass.MouseButton1Click:Connect(function()
     glassMode = not glassMode; setT(tGlass,iGlass,glassMode,Color3.new(1,1,1)); refreshGlass()
 end)
@@ -673,9 +657,9 @@ tOutline.MouseButton1Click:Connect(function()
     stroke.Enabled=outlineEnabled; openStroke.Enabled=outlineEnabled
 end)
 
--- ══════════════════════════════════════════
+
 --  WALKSPEED
--- ══════════════════════════════════════════
+
 tSpeed.MouseButton1Click:Connect(function()
     walkSpeedEnabled = not walkSpeedEnabled
     setT(tSpeed,iSpeed,walkSpeedEnabled,Color3.fromRGB(0,255,150))
@@ -690,9 +674,9 @@ RunService.Heartbeat:Connect(function()
     if c and c:FindFirstChild("Humanoid") then c.Humanoid.WalkSpeed=walkSpeedValue end
 end)
 
--- ══════════════════════════════════════════
+
 --  FLY  (AssemblyLinearVelocity)
--- ══════════════════════════════════════════
+
 tFly.MouseButton1Click:Connect(function()
     flying = not flying; setT(tFly,iFly,flying,Color3.fromRGB(0,150,255))
     local char = player.Character
@@ -709,9 +693,9 @@ tFly.MouseButton1Click:Connect(function()
     end
 end)
 
--- ══════════════════════════════════════════
+
 --  NOCLIP
--- ══════════════════════════════════════════
+
 tNoclip.MouseButton1Click:Connect(function()
     noclip = not noclip; setT(tNoclip,iNoclip,noclip,Color3.fromRGB(180,50,255))
     if not noclip and player.Character then
@@ -727,9 +711,9 @@ RunService.Stepped:Connect(function()
     end
 end)
 
--- ══════════════════════════════════════════
+
 --  CLICK TP
--- ══════════════════════════════════════════
+
 tClickTp.MouseButton1Click:Connect(function()
     clickTpEnabled = not clickTpEnabled
     setT(tClickTp,iClickTp,clickTpEnabled,Color3.fromRGB(0,220,255))
@@ -753,9 +737,9 @@ UserInputService.InputBegan:Connect(function(inp, processed)
     end
 end)
 
--- ══════════════════════════════════════════
+
 --  HIGHLIGHT ESP
--- ══════════════════════════════════════════
+
 local function getVisColor()
     return visualColorMode=="fixed" and fixedVisualColor or Color3.new(1,0,0)
 end
@@ -783,9 +767,9 @@ tHighlight.MouseButton1Click:Connect(function()
     end
 end)
 
--- ══════════════════════════════════════════
+
 --  2D BOXES
--- ══════════════════════════════════════════
+
 local function getOrCreateBox(uid)
     if boxFrames[uid] then return boxFrames[uid][1], boxFrames[uid][2] end
     local f = Instance.new("Frame", canvas)
@@ -803,9 +787,8 @@ tBoxes.MouseButton1Click:Connect(function()
     if not boxesEnabled then for uid in pairs(boxFrames) do removeBox(uid) end end
 end)
 
--- ══════════════════════════════════════════
 --  HEAD CIRCLES
--- ══════════════════════════════════════════
+
 local function getOrCreateHeadCircle(uid)
     if headCircles[uid] then return headCircles[uid][1], headCircles[uid][2] end
     local f = Instance.new("Frame", canvas)
@@ -825,9 +808,9 @@ tHead.MouseButton1Click:Connect(function()
     if not headEnabled then for uid in pairs(headCircles) do removeHeadCircle(uid) end end
 end)
 
--- ══════════════════════════════════════════
+
 --  TRACERS
--- ══════════════════════════════════════════
+
 local function getOrCreateTracer(uid)
     if tracerFrames[uid] then return tracerFrames[uid] end
     local f = Instance.new("Frame", canvas)
@@ -846,9 +829,9 @@ tTracers.MouseButton1Click:Connect(function()
     if not tracersEnabled then for uid in pairs(tracerFrames) do removeTracer(uid) end end
 end)
 
--- ══════════════════════════════════════════
+
 --  AIMBOT TOGGLES
--- ══════════════════════════════════════════
+
 tAimbot.MouseButton1Click:Connect(function()
     aimbotEnabled = not aimbotEnabled
     setT(tAimbot,iAimbot,aimbotEnabled,Color3.fromRGB(255,80,80))
@@ -858,9 +841,9 @@ tSilentAim.MouseButton1Click:Connect(function()
     setT(tSilentAim,iSilentAim,silentAimEnabled,Color3.fromRGB(255,120,0))
 end)
 
--- ══════════════════════════════════════════
+
 --  FOV TOGGLES
--- ══════════════════════════════════════════
+
 tAimFov.MouseButton1Click:Connect(function()
     aimFovEnabled = not aimFovEnabled
     setT(tAimFov,iAimFov,aimFovEnabled,Color3.fromRGB(255,200,0))
@@ -872,17 +855,17 @@ tSaFov.MouseButton1Click:Connect(function()
     saFovCircle.Visible = saFovEnabled
 end)
 
--- ══════════════════════════════════════════
+
 --  DEXTER (no function)
--- ══════════════════════════════════════════
+
 tDexter.MouseButton1Click:Connect(function()
     dexterState = not dexterState
     setT(tDexter,iDexter,dexterState,Color3.fromRGB(100,200,255))
 end)
 
--- ══════════════════════════════════════════
+
 --  PLAYER EVENTS
--- ══════════════════════════════════════════
+
 Players.PlayerAdded:Connect(function(p)
     task.spawn(addHighlight, p)
     p.CharacterAdded:Connect(function()
@@ -894,9 +877,9 @@ Players.PlayerRemoving:Connect(function(p)
     removeHeadCircle(p.UserId); removeTracer(p.UserId)
 end)
 
--- ══════════════════════════════════════════
+
 --  SILENT AIM  (smooth cursor nudge over multiple frames)
--- ══════════════════════════════════════════
+
 UserInputService.InputBegan:Connect(function(inp, processed)
     if not silentAimEnabled or processed then return end
     if inp.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
@@ -936,20 +919,20 @@ UserInputService.InputBegan:Connect(function(inp, processed)
     end
 end)
 
--- ══════════════════════════════════════════
+
 --  MAIN RENDER LOOP
--- ══════════════════════════════════════════
+
 RunService.RenderStepped:Connect(function()
     local cam    = workspace.CurrentCamera
     local vp     = cam.ViewportSize
     local origin = tracerOriginBottom
-        and Vector2.new(vp.X/2, vp.Y)   -- bottom center
-        or  Vector2.new(vp.X/2, 0)      -- top center (default)
+        and Vector2.new(vp.X/2, vp.Y)   
+        or  Vector2.new(vp.X/2, 0)      
 
-    -- Cursor position (used by FOV circles + aimbot target search)
+
     local mousePos = UserInputService:GetMouseLocation()
 
-    -- FOV circles follow cursor
+
     if aimFovEnabled then
         aimFovCircle.Position = UDim2.new(0, mousePos.X, 0, mousePos.Y)
     end
@@ -957,19 +940,19 @@ RunService.RenderStepped:Connect(function()
         saFovCircle.Position = UDim2.new(0, mousePos.X, 0, mousePos.Y)
     end
 
-    -- Current visual + FOV colors
+
     local vColor = visualColorMode=="rgb" and Color3.fromHSV(tick()%5/5, 0.85, 1) or fixedVisualColor
     local fColor = fovColorMode=="rgb"    and Color3.fromHSV(tick()%5/5, 0.6,  1) or fixedFovColor
 
     if aimFovEnabled then aimFovStroke.Color = fColor end
     if saFovEnabled  then saFovStroke.Color  = fColor end
 
-    -- Update RGB highlight outlines
+
     if highlightEnabled and visualColorMode=="rgb" then
         for _, h in pairs(espHighlights) do h.OutlineColor=vColor end
     end
 
-    -- Fly movement
+
     if flying then
         local char = player.Character
         if char then
@@ -987,7 +970,7 @@ RunService.RenderStepped:Connect(function()
         end
     end
 
-    -- Per-player visuals + aimbot search
+
     local active = {}
     local aimbotTarget, closestDist = nil, math.huge
 
@@ -997,7 +980,7 @@ RunService.RenderStepped:Connect(function()
             local head = char:FindFirstChild("Head")
             local root = char:FindFirstChild("HumanoidRootPart")
             if head and root then
-                -- Screen projections
+               
                 local hsp, hOk = cam:WorldToViewportPoint(head.Position + Vector3.new(0, 0.65, 0))
                 local fsp, fOk = cam:WorldToViewportPoint(root.Position - Vector3.new(0, 3.1, 0))
                 local hcSp     = cam:WorldToViewportPoint(head.Position)  -- head center for circle
@@ -1005,7 +988,7 @@ RunService.RenderStepped:Connect(function()
 
                 active[p.UserId] = true
 
-                -- 2D Box
+            
                 if boxesEnabled then
                     local bf, bs = getOrCreateBox(p.UserId)
                     if inFront then
@@ -1017,7 +1000,7 @@ RunService.RenderStepped:Connect(function()
                     else bf.Visible=false end
                 end
 
-                -- Head circle (sized to match head in screen space)
+             
                 if headEnabled then
                     local hf, hs = getOrCreateHeadCircle(p.UserId)
                     if inFront then
@@ -1030,7 +1013,7 @@ RunService.RenderStepped:Connect(function()
                     else hf.Visible=false end
                 end
 
-                -- Tracer
+        
                 if tracersEnabled then
                     local tf = getOrCreateTracer(p.UserId)
                     if inFront then
@@ -1042,7 +1025,7 @@ RunService.RenderStepped:Connect(function()
                     else tf.Visible=false end
                 end
 
-                -- Aimbot search: closest head to CURSOR within aimFovRadius
+               
                 if aimbotEnabled and inFront then
                     local d = (Vector2.new(hsp.X, hsp.Y) - mousePos).Magnitude
                     if d < aimFovRadius and d < closestDist then
@@ -1053,32 +1036,32 @@ RunService.RenderStepped:Connect(function()
         end
     end
 
-    -- Cleanup orphaned elements
+ 
     for uid in pairs(boxFrames)    do if not active[uid] then removeBox(uid)         end end
     for uid in pairs(headCircles)  do if not active[uid] then removeHeadCircle(uid)  end end
     for uid in pairs(tracerFrames) do if not active[uid] then removeTracer(uid)      end end
 
-    -- Aimbot: lock with chosen method, hold RMB
+  
     if aimbotEnabled and aimbotTarget
         and UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
         if aimlockMethod == "camera" then
-            -- Direct camera snap to head
+           
             cam.CFrame = CFrame.new(cam.CFrame.Position, aimbotTarget.Position)
         else
-            -- Cursor method: smooth relative nudge toward target each frame
+         
             local sp  = cam:WorldToViewportPoint(aimbotTarget.Position)
             local cur = UserInputService:GetMouseLocation()
             local dx  = sp.X - cur.X
             local dy  = sp.Y - cur.Y
-            -- 0.35 factor: fast enough to lock, smooth enough not to snap
+         
             pcall(function() mousemoverel(dx * 0.35, dy * 0.35) end)
         end
     end
 end)
 
--- ══════════════════════════════════════════
+
 --  RGB LOOP
--- ══════════════════════════════════════════
+
 task.spawn(function()
     while true do
         local c = Color3.fromHSV(tick()%5/5, 0.6, 1)
