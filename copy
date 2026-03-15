@@ -1,6 +1,4 @@
--- [[ JKxxx ELITE - V7.0 ]] --
--- FOV follows cursor, SA cursor-based, Aimlock Method dropdown,
--- Arrow on far-right, Head circles, Menu/Color/Other settings, Accent in Color
+
 
 local Players          = game:GetService("Players")
 local RunService       = game:GetService("RunService")
@@ -58,7 +56,8 @@ local allIconBtns     = {}  -- sidebar tab icon buttons for theme coloring
 local strokeColorMode  = "rgb";  local fixedStrokeColor = Color3.new(1, 1, 1)
 local visualColorMode  = "rgb";  local fixedVisualColor  = Color3.new(1, 0, 0)
 local fovColorMode     = "rgb";  local fixedFovColor     = Color3.new(1, 1, 1)
-local accentColor      = nil  -- nil = per-toggle default
+local accentColor = nil  -- nil = per-toggle default
+local accentRgb   = false -- true = RGB cycling accent
 
 -- Per-player tables
 local espHighlights = {}
@@ -84,6 +83,7 @@ local COLOR_PRESETS = {
 }
 local ACCENT_PRESETS = {
     {label="Default", mode="default", color=nil},
+    {label="RGB",     mode="rgb",     color=nil},
     {label="Blue",    mode="fixed",   color=Color3.fromRGB(30,  120, 255)},
     {label="Red",     mode="fixed",   color=Color3.fromRGB(255,  50,  50)},
     {label="Green",   mode="fixed",   color=Color3.fromRGB(0,   210,  80)},
@@ -91,6 +91,10 @@ local ACCENT_PRESETS = {
     {label="Pink",    mode="fixed",   color=Color3.fromRGB(255,  80, 180)},
     {label="Purple",  mode="fixed",   color=Color3.fromRGB(160,  55, 255)},
     {label="White",   mode="fixed",   color=Color3.fromRGB(240, 240, 240)},
+}
+local MINPOS_PRESETS = {
+    {label="Middle", mode="middle"},
+    {label="Bottom", mode="bottom"},
 }
 local AIMLOCK_METHODS = {
     {label="Camera", mode="camera"},
@@ -299,17 +303,21 @@ local function setT(btn, ind, on, col)
     end
 end
 
-local function applyAccent(newColor)
-    accentColor = newColor
-    for _, r in ipairs(toggleRegistry) do
-        if r.isOn then
-            r.ind.BackgroundColor3 = accentColor or r.col
-            r.btn.TextColor3       = accentColor or r.col
+local function applyAccent(newColor, isRgb)
+    accentRgb   = isRgb or false
+    accentColor = accentRgb and Color3.new(1,1,1) or newColor  -- seed with white if RGB
+    if not accentRgb then
+        -- Apply fixed/default immediately
+        for _, r in ipairs(toggleRegistry) do
+            if r.isOn then
+                r.ind.BackgroundColor3 = accentColor or r.col
+                r.btn.TextColor3       = accentColor or r.col
+            end
         end
-    end
-    local sc = accentColor or Color3.new(1,1,1)
-    for _, sl in ipairs(sliderElements) do
-        sl[1].BackgroundColor3 = sc; sl[2].BackgroundColor3 = sc
+        local sc = accentColor or Color3.new(1,1,1)
+        for _, sl in ipairs(sliderElements) do
+            sl[1].BackgroundColor3 = sc; sl[2].BackgroundColor3 = sc
+        end
     end
 end
 
@@ -678,11 +686,22 @@ end)
 
 mkLabel("Accent", cStCol, 3)
 mkDropdown(cStCol, 4, ACCENT_PRESETS, function(p)
-    if p.mode == "default" then applyAccent(nil) else applyAccent(p.color) end
+    if p.mode == "default" then applyAccent(nil, false)
+    elseif p.mode == "rgb" then applyAccent(nil, true)
+    else applyAccent(p.color, false) end
 end)
 
 -- Other sub-tab content
 local tDexter, iDexter = mkToggle("67", cOther, 1)
+
+mkLabel("Minimize position", cOther, 2)
+mkDropdown(cOther, 3, MINPOS_PRESETS, function(p)
+    if p.mode == "middle" then
+        openBtn.Position = UDim2.new(0, 15, 0.5, -20)
+    else
+        openBtn.Position = UDim2.new(0, 15, 1, -60)
+    end
+end)
 
 local otherNote = Instance.new("TextLabel", cOther)
 otherNote.Size               = UDim2.new(0.95, 0, 0, 30)
@@ -1003,13 +1022,53 @@ tSaFov.MouseButton1Click:Connect(function()
 end)
 
 -- ══════════════════════════════════════════
---  67 BACKGROUND TOGGLE
+--  67 BACKGROUND TOGGLE + POP-OUT
 -- ══════════════════════════════════════════
+
+-- Pop-out frame (shown when 67 activates)
+local popup = Instance.new("Frame", sg)
+popup.Size               = UDim2.new(0, 0, 0, 60)  -- starts width=0, tweens open
+popup.AnchorPoint        = Vector2.new(0.5, 0.5)
+popup.Position           = UDim2.new(0.5, 0, 0.5, 0)
+popup.BackgroundColor3   = Color3.fromRGB(10, 10, 12)
+popup.BorderSizePixel    = 0
+popup.Visible            = false
+popup.ZIndex             = 30
+Instance.new("UICorner", popup).CornerRadius = UDim.new(0, 10)
+local popupStroke = Instance.new("UIStroke", popup)
+popupStroke.Thickness = 1.5; popupStroke.Color = Color3.fromRGB(100, 200, 255)
+
+local popupLbl = Instance.new("TextLabel", popup)
+popupLbl.Size               = UDim2.new(1, -20, 1, 0)
+popupLbl.Position           = UDim2.new(0, 10, 0, 0)
+popupLbl.BackgroundTransparency = 1
+popupLbl.Text               = "THE SIX SEVEN.....  THE SIX SEVEN IS REAAAL"
+popupLbl.Font               = Enum.Font.GothamBold
+popupLbl.TextSize            = 13
+popupLbl.TextColor3          = Color3.new(1, 1, 1)
+popupLbl.TextXAlignment      = Enum.TextXAlignment.Center
+popupLbl.TextWrapped         = true
+popupLbl.ZIndex              = 31
+
+local function showPopup()
+    popup.Visible = true
+    popup.Size    = UDim2.new(0, 0, 0, 60)
+    popup.BackgroundTransparency = 0
+    TweenService:Create(popup, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+        {Size = UDim2.new(0, 360, 0, 60)}):Play()
+    task.delay(2.8, function()
+        TweenService:Create(popup, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+            {Size = UDim2.new(0, 0, 0, 60), BackgroundTransparency = 1}):Play()
+        task.delay(0.3, function() popup.Visible = false end)
+    end)
+end
+
 tDexter.MouseButton1Click:Connect(function()
     dexterState    = not dexterState
     dexterBgActive = dexterState
     setT(tDexter, iDexter, dexterState, Color3.fromRGB(100, 200, 255))
     refreshTheme()
+    if dexterState then showPopup() end
 end)
 
 -- ══════════════════════════════════════════
@@ -1262,6 +1321,19 @@ task.spawn(function()
         rgbLine.BackgroundColor3 = c
         if strokeColorMode == "rgb" then
             stroke.Color = c; openStroke.Color = c; dropStrkStroke.Color = c
+        end
+        -- RGB accent: update all active toggles and sliders each frame
+        if accentRgb then
+            accentColor = c
+            for _, r in ipairs(toggleRegistry) do
+                if r.isOn then
+                    r.ind.BackgroundColor3 = c
+                    r.btn.TextColor3       = c
+                end
+            end
+            for _, sl in ipairs(sliderElements) do
+                sl[1].BackgroundColor3 = c; sl[2].BackgroundColor3 = c
+            end
         end
         for _, ul in ipairs(allSubUnderlines) do
             if ul.Size.X.Offset > 0 then ul.BackgroundColor3 = c end
